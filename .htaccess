@@ -1,15 +1,15 @@
 # Set the default handler.
-DirectoryIndex index.php index.html index.htm
+#DirectoryIndex index.php index.html index.htm
 
 # Prevent directory listing
-Options -Indexes
+#Options -Indexes
 
 # Make sure MultiViews is disabled if available.
 <IfModule mod_negotiation.c>
-  Options -MultiViews
+#  Options -MultiViews
 </IfModule>
 
-<FilesMatch "\.(yml|db|twig|md)$">
+<FilesMatch "\.(yml|db|twig|md|phar)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>
@@ -25,7 +25,10 @@ Options -Indexes
   RewriteRule cache/ - [F]
 
   # Some servers require the RewriteBase to be set. If so, set to the correct folder.
-  # RewriteBase /
+  RewriteBase /~zechy/
+
+  # Prevent indexes for theme and app directories from showing
+  RewriteRule (app|CodeSniffer|extensions|files|\.git|src|tests|theme|tmp|vendor)(.*)/$ /~zechy/ [R=301,L]
 
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
