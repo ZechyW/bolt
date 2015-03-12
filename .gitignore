@@ -52,3 +52,5 @@ Vagrantfile
 /bolt.log
 coverage.xml
 
+# Google Analytics stuff
+google*
