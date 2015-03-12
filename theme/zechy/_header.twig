@@ -1,0 +1,48 @@
+{# Prep <head>, including stylesheets #}
+{% include '_preamble.twig' %}
+
+{#
+Path to top-level:
+<html>
+  <body> #}
+    <!-- First floating row: Top bar and Banner -->
+    <header class="row">
+      <!-- Top bar -->
+      <nav class="top-bar" data-topbar role="navigation">
+          <ul class="title-area">
+              <li class="name"><h1><a href="{{ paths.root }}">Home</a></h1></li>
+              <li class="toggle-topbar menu-icon"><a href="#">☰ Menu</a></li>
+          </ul>
+
+          <section class="top-bar-section">
+              <!-- Right Nav Section -->
+              <ul class="right">
+                  {# Include the menu, as defined in config/menu.yml. Note that this theme comes with it's own _sub_menu.twig. If this file wasn't included in the current theme, the default menu template in app/theme_defaults/_sub_menu.twig would be used. #}
+                  {{ menu('main', '_sub_menu.twig') }}
+
+                  {# Include the '_sub_searchbox.twig' template, for the searchbox. If this file wasn't included in the theme, the default searchbox template in app/theme_defaults/_sub_searchbox.twig would be used. #}
+                  {% include '_sub_searchbox.twig' %}
+              </ul>
+          </section>
+      </nav>
+      <!-- End Top bar -->
+
+      <!-- Banner -->
+      <div class="banner-column shadow-dark gap-row">
+        <img src="{{ paths.theme }}images/header-1000x250.png" alt="Linguistics" />
+        <div class="banner-overlay">
+          <p>
+            <strong>{{ app.config.get('general/sitename') }}</strong>
+            {% if app.config.get('general/payoff') %}
+              <br>{{ app.config.get('general/payoff') }}
+            {% endif %}
+          </p>
+        </div>
+      </div>
+      <!-- End Banner -->
+
+    </header>
+    <!-- End First floating row -->
+      
+    <!-- Second floating row: Master content container -->
+    <div class="row shadow gap-row white"><div class="large-12 columns gap-top">

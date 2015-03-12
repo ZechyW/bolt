@@ -1,0 +1,86 @@
+{# Header -- Opens master container #}
+{% include '_header.twig' %}
+
+{#
+Path to top-level:
+<html>
+  <body> 
+    <!-- Second floating row: Master content container -->
+    <div class="row shadow gap-row white"> #}
+
+      <!-- Main content -->
+      <div class="medium-8 columns" role="content">
+
+        <!-- Entry -->
+        <article>
+          <div class="row">
+            <div class="column">
+              <h2>{{ record.title }}</h2>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="columns">
+              {% if record.image!="" %}
+              <div class="imageholder small-gap-top small-gap-bottom medium-right">
+                <a href="{{ image(record.image) }}">
+                  <img src="{{ thumbnail(record.image, 200, 130) }}">
+                </a>
+              </div>
+              {% endif %}
+
+              {# Display suitable excerpt... #}
+              {{ record.teaser }}
+
+              {# if the entry has a video, display it. #}
+              {% if record.video is not empty %}
+                  <div class="clearfix"></div>
+                  {{ record.video.responsive }}
+              {% endif %}
+
+              {{ record.body }}
+
+              {% include '_recordfooter.twig' with {'record': record} %}
+
+              {% if Disqus is defined %}
+                  {# Show the Disqus comment box, if the Disqus extension is installed .. #}
+                  <h4>Leave a comment</h4>
+                  {{ Disqus.disqus() }}
+                  <hr>
+              {% elseif FacebookComments is defined %}
+                  {# Show the Facebook comment box, if Facebookcomments extension is installed .. #}
+                  <h4>Leave a comment</h4>                
+                  {{ FacebookComments.facebookComments() }}            
+                  <hr>
+              {% endif %}
+
+              <p class="meta">
+                  {% set previous = record.previous('id') %}
+                  {% set next = record.next('id') %}
+                  
+                  {% if previous %}
+                      <a href="{{ previous.link }}">&laquo; {{ previous.title }}</a>
+                  {% endif %}
+                  
+                  {% if previous and next %}
+                    -
+                  {% endif %}
+
+                  {% if next %}
+                      <a href="{{ next.link }}">{{ next.title }} &raquo;</a>
+                  {% endif %}
+              </p>
+            </div>
+          </div>
+
+        </article>
+        <!-- End Feature record-->
+
+      </div>
+      <!-- End Main Content -->
+
+      {# Include the sidebar #}
+      {% include '_aside.twig' %}
+
+      {# Show the main content footer, close the main content row, and round off by including the js files #}
+      {% include '_footer.twig' %}

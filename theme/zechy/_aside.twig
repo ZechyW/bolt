@@ -1,0 +1,116 @@
+{# About panel macro #}
+        {% macro about(class) %}
+        <div class="{{ class }}">
+
+          {# The next section attempts to fill the panel in the sidebar with part of the
+          'about'-page, if it exists. First, attempt to fetch a page with slug 'about' #}
+          {% setcontent about = "page/about" %}
+          <div class="row">
+            <div class="columns small-gap-bottom">
+              <h5>{{ about.title }}</h5>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="large-6 large-push-6 columns">
+              <div class="imageholder gap-bottom" id="about_img">
+                <img src="/~zechy/thumbs/105x140c/{{ about.about_picture }}" />
+              </div>
+            </div>
+            <div class="large-6 large-pull-6 columns small-gap-bottom smaller-p">
+                {{ about.about_blurb }}
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="columns smaller-a">
+              <a href="{{ about.link }}">{{ __('Read more') }} &raquo;</a>
+            </div>
+          </div>
+
+        </div>
+        {% endmacro %}
+        {% import _self as aside %}
+
+{#
+Path to top-level:
+<html>
+  <body> 
+    <!-- Second floating row: Master content container -->
+    <div class="row shadow gap-row white"> #}
+
+      <!-- Sidebar -->
+      <aside class="medium-4 columns">
+
+        <hr class="show-for-small-only">
+
+        <!-- About panel: On top for medium and up -->
+        {{ aside.about('panel small-gap-top show-for-medium-up') }}
+        <!-- End About panel -->
+
+        <!-- Latest entries -->
+        <div class="gap-top">
+        {# The next section iterates over all of the contenttypes, and prints a list
+           of the five latest records of each of them. The 'magic' happens in the
+           setcontent tag.. ct.slug ~ "/latest/5" concatenates the slug ot the
+           contenttype with /latest/5, so it becomes something like "pages/latest/5".
+           The 'else' in the inner for-loop is only used if there are no 'records',
+           so we can use it to print a helpful message.
+           Lastly, "{{ paths.root }}{{ct.slug}}" will output something like '/pages',
+           effectively creating a working link to that contenttpye's listing page.#}
+
+         {# for ct in app.config.get('contenttypes') if not ct.viewless|default(false) #}
+         {# We only want entries, not pages. #}
+         {# Going manual. 
+         {% for ct in app.config.get('contenttypes') if ct.name == "Entries" %}
+
+          {% setcontent records = ct.slug ~ "/latest/5" %}
+
+            <h5>{{ __('contenttypes.generic.recent', {'%contenttypes%': ct.slug}) }}</h5>
+            <ul>
+              {% for record in records %}
+                <li><a href="{{ record.link }}">{{ record.title }}</a></li>
+                {% else %}
+                <li>{{ __('contenttypes.generic.no-recent', {'%contenttype%': ct.slug}) }}</li>
+              {% endfor %}
+            </ul>
+            <p><a href="{{ paths.root }}{{ct.slug}}">{{ __('contenttypes.generic.overview',{'%contenttypes%': ct.slug}) }} &raquo;</a></p>
+
+          {% endfor %}
+         #}
+
+          {# Course Entries #}
+          {% setcontent records = "course-entries/latest/5" %}
+
+          <h5>Recent Course-Related Entries</h5>
+          <ul>
+            {% for record in records %}
+              <li><a href="{{ record.link }}">{{ record.title }}</a></li>
+              {% else %}
+              <li>No recent course-related entries.</li>
+            {% endfor %}
+          </ul>
+          <p><a href="{{ paths.root }}course-entries">Overview of Course-Related Entries &raquo;</a></p>
+
+          {# Other Entries #}
+          {% setcontent records = "entries/latest/5" %}
+
+          <h5>Recent Other Entries</h5>
+          <ul>
+            {% for record in records %}
+              <li><a href="{{ record.link }}">{{ record.title }}</a></li>
+              {% else %}
+              <li>No recent other entries.</li>
+            {% endfor %}
+          </ul>
+          <p><a href="{{ paths.root }}entries">Overview of Other Entries &raquo;</a></p>
+
+        </div>
+        <!-- End Latest entries -->
+
+        <!-- About panel: Below for small -->
+        {{ aside.about('panel gap-top show-for-small-only small-9') }}
+        <!-- End About panel -->
+          
+      </aside>
+      <!-- End Sidebar -->

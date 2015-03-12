@@ -1,0 +1,169 @@
+{# Header -- Opens master container #}
+{% include '_header.twig' %}
+
+{#
+Path to top-level:
+<html>
+  <body> 
+    <!-- Second floating row: Master content container -->
+    <div class="row shadow gap-row white"> #}
+
+      <!-- Main content -->
+      <div class="medium-8 columns">
+
+        {# Show main article, if any #}
+        {% if record is defined %}
+        <article>
+
+          {# make the 'home' variable refer to the current record, which is set by the user in config.yml #}
+          {% set home = record %}
+          {% if home.title is defined and home.title is not empty %}
+            <h1>{{ home.title }}</h1>
+          {% endif %}
+
+          {% if home.image is defined and home.image is not empty %}
+            <div class="small-5 columns imageholder">
+                <a href="{{ image(home.image) }}">
+                    <img src="{{ thumbnail(home.image, 696, 400) }}">
+                </a>
+            </div>
+          {% endif %}
+
+          {# display something introduction-like.. #}
+          {% if home.introduction is defined and home.introduction is not empty %}
+            {{ home.introduction }}
+          {% elseif home.teaser is defined and home.teaser is not empty %}
+            {{ home.teaser }}
+          {% elseif home is not empty %}
+            <p>{{ home.excerpt(500) }}</p>
+          {% endif %}
+
+          {% if home.link is defined and home.link is not empty %}
+            <a href="{{ home.link }}"><strong>&hellip; Read more &raquo;</strong></a>
+          {% endif %}
+
+        </article>
+        {% endif %}
+
+        <h3>{{ __('Latest Course-Related Entries') }}</h3>
+
+        {# Here we use 'setcontent' to set the variable 'records' to "course-entries/latest/2",
+           which is shorthand for "the 2 latest records in Course Entries. Note that we are
+           requesting multiple entries, so 'records' will be an array containing each
+           of the entries. That's why we use the 'for' loop to iterate over them all. #}
+        {% setcontent records = "course-entries/latest/2" allowpaging %}
+        {% for record in records %}
+          <article>
+
+            <div class="row">
+              <div class="column">
+                <h3><a href="{{ record.link }}">{{ record.title }}</a></h3>
+              </div>
+            </div>
+            
+            
+            <div class="row">
+              <div class="columns">
+                {% if record.image!="" %}
+                <div class="imageholder small-gap-top small-gap-bottom medium-right">
+                  <a href="{{ image(record.image) }}">
+                    <img src="{{ thumbnail(record.image, 200, 130) }}">
+                  </a>
+                </div>
+                {% endif %}
+
+                {# Display suitable excerpt... #}
+                {% if record.introduction %}
+                  {{ record.introduction }}
+                {% elseif record.teaser != "" %}
+                  {{ record.teaser }}
+                {% else %}
+                  <p>{{ record.excerpt(300) }}</p>
+                {% endif %}
+
+                {% if record.body != "" %}
+                  <div class="gap-bottom">
+                    <a href="{{ record.link }}"><strong>&hellip; Read more &raquo;</strong></a>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+
+            {% include '_recordfooter.twig' with {'record': record} %}
+
+          </article>
+
+          {# Suppress horizontal rule for the last entry #}
+          {% if not loop.last %}
+            <hr>
+          {% endif %}
+
+        {% endfor %}
+        
+        <hr>
+
+        <h3>{{ __('Latest Other Entries') }}</h3>
+
+        {# Here we use 'setcontent' to set the variable 'records' to "entries/latest/2",
+           which is shorthand for "the 2 latest records in Entries. Note that we are
+           requesting multiple entries, so 'records' will be an array containing each
+           of the entries. That's why we use the 'for' loop to iterate over them all. #}
+        {% setcontent records = "entries/latest/2" allowpaging %}
+        {% for record in records %}
+          <article>
+
+            <div class="row">
+              <div class="column">
+                <h3><a href="{{ record.link }}">{{ record.title }}</a></h3>
+              </div>
+            </div>
+            
+            
+            <div class="row">
+              <div class="columns">
+                {% if record.image!="" %}
+                <div class="imageholder small-gap-top small-gap-bottom medium-right">
+                  <a href="{{ image(record.image) }}">
+                    <img src="{{ thumbnail(record.image, 200, 130) }}">
+                  </a>
+                </div>
+                {% endif %}
+
+                {# Display suitable excerpt... #}
+                {% if record.introduction %}
+                  {{ record.introduction }}
+                {% elseif record.teaser != "" %}
+                  {{ record.teaser }}
+                {% else %}
+                  <p>{{ record.excerpt(300) }}</p>
+                {% endif %}
+
+                {% if record.body != "" %}
+                  <div class="gap-bottom">
+                    <a href="{{ record.link }}"><strong>&hellip; Read more &raquo;</strong></a>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+
+            {% include '_recordfooter.twig' with {'record': record} %}
+
+          </article>
+
+          {# Suppress horizontal rule for the last entry #}
+          {% if not loop.last %}
+            <hr>
+          {% endif %}
+
+        {% endfor %}
+
+        {{ pager() }}
+
+      </div>
+      <!-- End Main Content -->
+
+      {# Include the sidebar #}
+      {% include '_aside.twig' %}
+
+      {# Show the main content footer, close the main content row, and round off by including the js files #}
+      {% include '_footer.twig' %}

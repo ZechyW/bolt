@@ -1,0 +1,139 @@
+{# Header -- Opens master container #}
+{% include '_header.twig' %}
+
+{#
+Path to top-level:
+<html>
+  <body> 
+    <!-- Second floating row: Master content container -->
+    <div class="row shadow gap-row white"> #}
+
+      <!-- Main content -->
+      <div class="medium-8 columns" role="content">
+
+        <!-- Listing -->
+
+        {# This template is used for 'listings': Generic pages that list a number of
+           records from a certain contenttype. These records are available as an array
+           called 'records'. In the for-loop below, we iterate over the records that
+           are on this page. It can be used for overview pages like 'all entries', or
+           'all records tagged with kittens' as well as search result. #}
+
+        {# if used for listing a taxonomy: #}
+        {% if taxonomytype is defined %}
+          <h3>
+            {{ __('Overview for') }}
+            {% if taxonomy.options[slug] is defined %}
+              {{ taxonomy.options[slug] }}
+            {% else %}
+              {{ slug }}
+            {% endif %}
+          </h3>
+          {# taxonomies are fetched unordered by design. If we specified an order in config.yml, sort them here: #}
+          {% set records = records|order(app.config.get('general/listing_sort')) %}
+        {% endif %}
+
+        {# This is also the default template for searchresults. If 'search' is defined,
+           we display an appropriate title. The 'records' array contains all of the
+           records matching the current query. If there are no results, the
+           code in the 'else' part of the for-loop is used. #}
+        {% if search is defined %}
+          <h3>
+            {{ __('Search results for <b> %search% </b>.', { '%search%': search|escape }) }}
+          </h3>
+        {% endif %}
+
+        {# And if used for displaying an overview of a certain content type: #}
+        {% if contenttype is defined %}
+          <h3>
+            {{ contenttype }} Overview
+          </h3>
+        {% endif %}
+
+        {% for record in records %}
+
+          <article>
+
+            <div class="row">
+              <div class="column">
+                <h3><a href="{{ record.link }}">{{ record.title }}</a></h3>
+              </div>
+            </div>
+            
+            
+            <div class="row">
+              <div class="columns">
+                {% if record.image!="" %}
+                <div class="imageholder small-gap-top small-gap-bottom medium-right">
+                  <a href="{{ image(record.image) }}">
+                    <img src="{{ thumbnail(record.image, 200, 130) }}">
+                  </a>
+                </div>
+                {% endif %}
+
+                {# Display suitable excerpt... #}
+                {% if record.introduction %}
+                  {{ record.introduction }}
+                {% elseif record.teaser != "" %}
+                  {{ record.teaser }}
+                {% else %}
+                  <p>{{ record.excerpt(300) }}</p>
+                {% endif %}
+              </div>
+            </div>
+
+            {% if record.body != "" %}
+              <div class="gap-bottom">
+                <a href="{{ record.link }}"><strong>&hellip; Read more &raquo;</strong></a>
+              </div>
+            {% endif %}            
+
+            {% include '_recordfooter.twig' with {'record': record} %}
+
+          </article>
+
+          {# Suppress horizontal rule for the last entry #}
+          {% if not loop.last %}
+            <hr>
+          {% endif %}
+
+        {% else %} {# No results :( #}
+          <article>
+
+            {% if search is defined %}
+              <p>
+                {{ __("No results found for '%search%'. Please try another search.", { '%search%': search|escape }) }}
+              </p>
+
+            {% else %}
+
+              <h2>No content found.</h2>
+
+              <p>
+                Unfortunately, no content could be found. Try another page, or go to the
+                <a href="{{ paths.root }}">homepage</a>.
+              </p>
+
+            {% endif %}
+
+            {#
+            optionally, you can redirect the browser to another page. Just uncomment the next line to do so.
+            {{ redirect('/') }}
+            #}
+
+          </article>
+        {% endfor %}
+
+        {# If there are more records than will fit on one page, the pager is shown. #}
+        {{ pager() }}
+
+        <!-- End Listing-->
+
+      </div>
+      <!-- End Main Content -->
+
+      {# Include the sidebar #}
+      {% include '_aside.twig' %}
+
+      {# Show the main content footer, close the main content row, and round off by including the js files #}
+      {% include '_footer.twig' %}
