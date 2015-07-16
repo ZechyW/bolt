@@ -27,6 +27,9 @@
   # Some servers require the RewriteBase to be set. If so, set to the correct folder.
   RewriteBase /~zechy/
 
+  # Online Corpus Editor Beta
+  RewriteRule (corpus[^/]*)/?$ http://52.24.57.247:8080/$1/ [R=301,L]
+
   # Prevent indexes for theme and app directories from showing
   RewriteRule (app|CodeSniffer|extensions|files|\.git|src|tests|theme|tmp|vendor)(.*)/$ /~zechy/ [R=301,L]
 
