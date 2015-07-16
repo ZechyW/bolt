@@ -2,6 +2,7 @@
 
 namespace Bolt;
 
+use Bolt\Response\BoltResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -17,7 +18,10 @@ use Symfony\Component\HttpFoundation\Response;
 class Render
 {
     public $app;
+    /** @var boolean */
     public $safe;
+    /** @var string */
+    public $twigKey;
 
     /**
      * Set up the object.
@@ -39,22 +43,22 @@ class Render
     /**
      * Render a template, possibly store it in cache. Or, if applicable, return the cached result.
      *
-     * @param $template
-     * @param array $vars
+     * @param string $template the template name
+     * @param array  $vars     array of context variables
+     * @param array  $globals  array of global variables
      *
-     * @return mixed
+     * @return \Bolt\Response\BoltResponse
      */
-    public function render($template, $vars = array())
+    public function render($template, $vars = [], $globals = [])
     {
-        // Start the 'stopwatch' for the profiler.
-        $this->app['stopwatch']->start('bolt.render', 'template');
+        $response = BoltResponse::create(
+            $this->app[$this->twigKey]->loadTemplate($template),
+            $vars,
+            $globals
+        );
+        $response->setStopwatch($this->app['stopwatch']);
 
-        $html = $this->app[$this->twigKey]->render($template, $vars);
-
-        // Stop the 'stopwatch' for the profiler.
-        $this->app['stopwatch']->stop('bolt.render');
-
-        return $html;
+        return $response;
     }
 
     /**
@@ -67,8 +71,12 @@ class Render
     public function postProcess(Response $response)
     {
         $html = $response->getContent();
-        $html = $this->app['extensions']->processSnippetQueue($html);
-        $html = $this->app['extensions']->processAssets($html);
+
+        /** @var \Bolt\Asset\QueueInterface $queue */
+        foreach ($this->app['asset.queues'] as $queue) {
+            $html = $queue->process($html);
+        }
+
         $this->cacheRequest($html);
 
         return $html;
@@ -77,11 +85,11 @@ class Render
     /**
      * Retrieve a fully cached page from cache.
      *
-     * @return mixed
+     * @return \Symfony\Component\HttpFoundation\Response|boolean
      */
     public function fetchCachedRequest()
     {
-        $result = null;
+        $response = false;
         if ($this->checkCacheConditions('request', true)) {
             $key = md5($this->app['request']->getPathInfo() . $this->app['request']->getQueryString());
 
@@ -89,17 +97,17 @@ class Render
 
             // If we have a result, prepare a Response.
             if (!empty($result)) {
-                // Note that we set the cache-control header to _half_ the maximum duration,
-                // otherwise a proxy/cache might keep the cache twice as long in the worst case
-                // scenario, and now it's only 50% max, but likely less
-                $headers = array(
-                    'Cache-Control' => 's-maxage=' . ($this->cacheDuration() / 2),
-                );
-                $result = new Response($result, 200, $headers);
+                $response = new Response($result, Response::HTTP_OK);
+
+                // Note that we set the cache-control header to _half_ the
+                // maximum duration, otherwise a proxy/cache might keep the
+                // cache twice as long in the worst case scenario, and now it's
+                // only 50% max, but likely less
+                $response->setSharedMaxAge($this->cacheDuration() / 2);
             }
         }
 
-        return $result;
+        return $response;
     }
 
     /**
@@ -110,8 +118,8 @@ class Render
     public function cacheRequest($html)
     {
         if ($this->checkCacheConditions('request')) {
-            // This is where the magic happens.. We also store it with an empty 'template' name,
-            // So we can later fetch it by its request.
+            // This is where the magic happens.. We also store it with an empty
+            // 'template' name, so we can later fetch it by its request.
             $key = md5($this->app['request']->getPathInfo() . $this->app['request']->getQueryString());
             $this->app['cache']->save($key, $html, $this->cacheDuration());
         }
@@ -120,7 +128,7 @@ class Render
     /**
      * Get the duration (in seconds) for the cache.
      *
-     * @return int;
+     * @return integer
      */
     public function cacheDuration()
     {
@@ -147,11 +155,6 @@ class Render
             return false;
         }
 
-        // Only cache pages in the frontend.
-        if ($this->app['config']->getWhichEnd() !== 'frontend') {
-            return false;
-        }
-
         // Only cache for 'get' requests.
         if ($this->app['request']->getMethod() !== 'GET') {
             return false;
@@ -164,7 +167,7 @@ class Render
 
         // Don't use the cache, if we're currently logged in. (unless explicitly enabled in config.yml
         if (!$this->app['config']->get('general/caching/authenticated') &&
-            $this->app['users']->getCurrentUsername() !== '') {
+            $this->app['users']->getCurrentUsername() !== null) {
             return false;
         }
 

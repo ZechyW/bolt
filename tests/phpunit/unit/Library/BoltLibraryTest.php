@@ -50,7 +50,12 @@ class BoltLibraryTest extends BoltUnitTest
     {
         $app = $this->getApp();
         $loader = $app['twig.loader'];
-        $template = $app['twig']->render('error.twig');
+        $app['twig']->render('error.twig', ['context' => [
+            'class'   => 'BoltResponse',
+            'message' => 'Clippy is bent out of shape',
+            'code'    => '1555',
+            'trace'   => []
+        ]]);
         $templates = Library::parseTwigTemplates($loader);
 
         $this->assertEquals(1, count($templates));
@@ -72,12 +77,12 @@ class BoltLibraryTest extends BoltUnitTest
             '/pages/content',
             Library::path(
                 'contentlink',
-                array('contenttypeslug' => 'pages', 'slug' => 'content')
+                ['contenttypeslug' => 'pages', 'slug' => 'content']
             )
         );
 
         $query = "testing=yes";
-        $this->assertEquals("/search?testing=yes", Library::path("search", array(), $query));
+        $this->assertEquals("/search?testing=yes", Library::path("search", [], $query));
     }
 
     public function testRedirect()
@@ -94,7 +99,7 @@ class BoltLibraryTest extends BoltUnitTest
         $app = $this->getApp();
         $request = Request::createFromGlobals();
         $app->handle($request);
-        $response = Library::redirect('contentlink', array('contenttypeslug' => 'pages', 'slug' => 'content'));
+        $response = Library::redirect('contentlink', ['contenttypeslug' => 'pages', 'slug' => 'content']);
         $this->assertEquals('/pages/content', $response->headers->get('Location'));
     }
 
@@ -106,16 +111,21 @@ class BoltLibraryTest extends BoltUnitTest
         $app['request'] = $request;
 
         $response = Library::redirect('login');
-        $this->assertNotEmpty($app['session']->get('retreat'));
-        $retreat = $app['session']->get('retreat');
-        $this->assertEquals('homepage', $retreat['route']);
+        $this->assertInstanceOf('\Symfony\Component\HttpFoundation\RedirectResponse', $response);
+        $this->assertRegExp('|Redirecting to /bolt/login|', $response->getContent());
+        $this->assertTrue($response->isRedirect(), "Response isn't a valid redirect condition.");
     }
 
     /**
      * @runInSeparateProcess
+     * @requires extension xdebug
      */
     public function testSimpleRedirect()
     {
+        if (phpversion('xdebug') === false) {
+            $this->markTestSkipped('No xdebug support enabled.');
+        }
+
         $app = $this->getApp();
         $this->expectOutputRegex("/Redirecting to/i");
         $redirect = Library::simpleredirect("/test", false);
@@ -124,9 +134,14 @@ class BoltLibraryTest extends BoltUnitTest
 
     /**
      * @runInSeparateProcess
+     * @requires extension xdebug
      */
     public function testSimpleRedirectEmpty()
     {
+        if (phpversion('xdebug') === false) {
+            $this->markTestSkipped('No xdebug support enabled.');
+        }
+
         $app = $this->getApp();
         $this->expectOutputRegex("/Redirecting to/i");
         $redirect = Library::simpleredirect("", false);
@@ -140,6 +155,7 @@ class BoltLibraryTest extends BoltUnitTest
     {
         $app = $this->getApp();
         $this->setExpectedException('Symfony\Component\HttpKernel\Exception\HttpException', "Redirecting to '/test2'.");
+        $this->expectOutputString("<p>Redirecting to <a href='/test2'>/test2</a>.</p><script>window.setTimeout(function () { window.location='/test2'; }, 500);</script>");
         $redirect = Library::simpleredirect("/test2", true);
     }
 

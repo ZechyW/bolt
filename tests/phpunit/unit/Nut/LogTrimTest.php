@@ -18,8 +18,8 @@ class LogTrimTest extends BoltUnitTest
         $command = new LogTrim($app);
         $tester = new CommandTester($command);
 
-        $tester->execute(array());
+        $tester->execute([]);
         $result = $tester->getDisplay();
-        $this->assertRegexp('/Activity logs trimmed/', $result);
+        $this->assertRegExp('/System & change logs trimmed/', $result);
     }
 }

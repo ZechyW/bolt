@@ -2,7 +2,6 @@
 
 namespace Bolt;
 
-use Bolt\Configuration\ResourceManager;
 use Doctrine\Common\Cache\FilesystemCache;
 
 /**
@@ -18,6 +17,9 @@ class Cache extends FilesystemCache
      */
     const DEFAULT_MAX_AGE = 600;
 
+    /** @var Application */
+    private $app;
+
     /**
      * Default cache file extension.
      */
@@ -26,15 +28,15 @@ class Cache extends FilesystemCache
     /**
      * @var string[] regular expressions for replacing disallowed characters in file name
      */
-    private $disallowedCharacterPatterns = array(
+    private $disallowedCharacterPatterns = [
         '/\-/', // replaced to disambiguate original `-` and `-` derived from replacements
         '/[^a-zA-Z0-9\-_\[\]]/' // also excludes non-ascii chars (not supported, depending on FS)
-    );
+    ];
 
     /**
      * @var string[] replacements for disallowed file characters
      */
-    private $replacementCharacters = array('__', '-');
+    private $replacementCharacters = ['__', '-'];
 
     /**
      * Set up the object. Initialize the proper folder for storing the files.
@@ -46,10 +48,17 @@ class Cache extends FilesystemCache
      */
     public function __construct($cacheDir, Application $app)
     {
+        $this->app = $app;
+
         try {
             parent::__construct($cacheDir, $this->extension);
+
+            // If the Bolt version has changed, flush our cache
+            if (!$this->checkCacheVersion()) {
+                $this->clearCache();
+            }
         } catch (\Exception $e) {
-            $app['logger.system']->critical($e->getMessage(), array('event' => 'exception', 'exception' => $e));
+            $app['logger.system']->critical($e->getMessage(), ['event' => 'exception', 'exception' => $e]);
             throw $e;
         }
     }
@@ -88,24 +97,23 @@ class Cache extends FilesystemCache
      */
     public function clearCache()
     {
-        $result = array(
+        $result = [
             'successfiles'   => 0,
             'failedfiles'    => 0,
-            'failed'         => array(),
+            'failed'         => [],
             'successfolders' => 0,
             'failedfolders'  => 0,
             'log'            => ''
-        );
+        ];
 
         // Clear Doctrine's folder.
-        parent::flushAll();
+        $this->flushAll();
 
         // Clear our own cache folder.
         $this->clearCacheHelper($this->getDirectory(), '', $result);
 
         // Clear the thumbs folder.
-        $app = ResourceManager::getApp();
-        $this->clearCacheHelper($app['resources']->getPath('web') . '/thumbs', '', $result);
+        $this->clearCacheHelper($this->app['resources']->getPath('web/thumbs'), '', $result);
 
         return $result;
     }
@@ -119,7 +127,7 @@ class Cache extends FilesystemCache
      */
     private function clearCacheHelper($startFolder, $additional, &$result)
     {
-        $currentfolder = realpath($startFolder . "/" . $additional);
+        $currentfolder = realpath($startFolder . '/' . $additional);
 
         if (!file_exists($currentfolder)) {
             $result['log'] .= "Folder $currentfolder doesn't exist.<br>";
@@ -130,7 +138,7 @@ class Cache extends FilesystemCache
         $dir = dir($currentfolder);
 
         while (($entry = $dir->read()) !== false) {
-            $exclude = array('.', '..', 'index.html', '.gitignore');
+            $exclude = ['.', '..', '.assetsalt', '.gitignore', 'index.html', '.version'];
 
             if (in_array($entry, $exclude)) {
                 continue;
@@ -157,5 +165,40 @@ class Cache extends FilesystemCache
         }
 
         $dir->close();
+
+        $this->updateCacheVersion();
+    }
+
+    /**
+     * Check if the cache version matches Bolt's current version
+     *
+     * @return boolean TRUE  - versions match
+     *                 FALSE - versions don't match
+     */
+    private function checkCacheVersion()
+    {
+        $file = $this->getDirectory() . '/.version';
+
+        if (!file_exists($file)) {
+            return false;
+        }
+
+        $version = md5($this->app['bolt_version'].$this->app['bolt_name']);
+        $cached  = file_get_contents($file);
+
+        if ($version === $cached) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Write our version string out to given cache directory
+     */
+    private function updateCacheVersion()
+    {
+        $version = md5($this->app['bolt_version'].$this->app['bolt_name']);
+        file_put_contents($this->getDirectory() . '/.version', $version);
     }
 }

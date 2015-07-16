@@ -16,7 +16,7 @@ use Bolt\Tests\BoltUnitTest;
  */
 class LowlevelChecksTest extends BoltUnitTest
 {
-    protected $errorResponses = array();
+    protected $errorResponses = [];
 
     /** @var \PHPUnit_Framework_MockObject_MockObject */
     protected $php;
@@ -36,38 +36,60 @@ class LowlevelChecksTest extends BoltUnitTest
             ->mockFunction('error_get_last')
             ->getMock();
 
-        $this->errorResponses = array(
-            'core' => array(
+        $this->errorResponses = [
+            'core' => [
                 'type'    => E_ERROR,
                 'file'    => TEST_ROOT . '/src',
                 'line'    => 16,
                 'message' => 'src error'
-            ),
-            'extensions' => array(
+            ],
+            'extensions' => [
                 'type'    => E_ERROR,
                 'file'    => TEST_ROOT . '/extensions',
                 'line'    => 1,
                 'message' => 'extension error'
-            ),
-            'extension' => array(
+            ],
+            'extension' => [
                 'type'    => E_ERROR,
                 'file'    => TEST_ROOT . '/extensions/vendor/gawain/clippy',
                 'line'    => 1,
                 'message' => 'extension error'
-            ),
-            'vendor' => array(
+            ],
+            'vendor' => [
                 'type'    => E_ERROR,
                 'file'    => TEST_ROOT . '/vendor',
                 'line'    => 1,
                 'message' => 'vendor error'
-            ),
-            'unknown' => array(
+            ],
+            'unknown' => [
                 'type'    => E_ERROR,
                 'file'    => TEST_ROOT,
                 'line'    => 1,
                 'message' => 'unknown error'
-            )
-        );
+            ]
+        ];
+    }
+
+    protected function getApp()
+    {
+        $this->php
+            ->expects($this->any())
+            ->method('is_dir')
+            ->will($this->returnValue(true));
+        $this->php
+            ->expects($this->any())
+            ->method('file_exists')
+            ->will($this->returnValue(true));
+        $this->php
+            ->expects($this->any())
+            ->method('is_writable')
+            ->will($this->returnValue(true));
+        $this->php
+            ->expects($this->any())
+            ->method('is_readable')
+            ->will($this->returnValue(true));
+
+        return parent::getApp();
     }
 
     public function tearDown()
@@ -304,21 +326,18 @@ class LowlevelChecksTest extends BoltUnitTest
 
     public function testCoreFatalErrorCatch()
     {
-        $app = array('resources' => new Standard(TEST_ROOT));
-        ResourceManager::$theApp = $app;
-
         $this->php2
             ->expects($this->once())
             ->method('error_get_last')
             ->will($this->returnValue($this->errorResponses['core']));
 
         $this->expectOutputRegex("/PHP Fatal Error: Bolt Core/");
-        LowlevelException::catchFatalErrors();
+        LowlevelException::catchFatalErrors($this->getApp(), false);
     }
 
     public function testVendorFatalErrorCatch()
     {
-        $app = array('resources' => new Standard(TEST_ROOT));
+        $app = ['resources' => new Standard(TEST_ROOT)];
         ResourceManager::$theApp = $app;
 
         $this->php2
@@ -326,13 +345,14 @@ class LowlevelChecksTest extends BoltUnitTest
             ->method('error_get_last')
             ->will($this->returnValue($this->errorResponses['vendor']));
 
+        $app = $this->getApp();
         $this->expectOutputRegex("/PHP Fatal Error: Vendor Library/");
-        LowlevelException::catchFatalErrors();
+        LowlevelException::catchFatalErrors($this->getApp(), false);
     }
 
     public function testExtFatalErrorCatch()
     {
-        $app = array('resources' => new Standard(TEST_ROOT));
+        $app = ['resources' => new Standard(TEST_ROOT)];
         ResourceManager::$theApp = $app;
 
         $this->php2
@@ -341,12 +361,12 @@ class LowlevelChecksTest extends BoltUnitTest
             ->will($this->returnValue($this->errorResponses['extension']));
 
         $this->expectOutputRegex("/PHP Fatal Error: Bolt Extensions/");
-        LowlevelException::catchFatalErrors();
+        LowlevelException::catchFatalErrors($this->getApp(), false);
     }
 
     public function testGeneralFatalErrorCatch()
     {
-        $app = array('resources' => new Standard(TEST_ROOT));
+        $app = ['resources' => new Standard(TEST_ROOT)];
         ResourceManager::$theApp = $app;
 
         $this->php2
@@ -355,7 +375,7 @@ class LowlevelChecksTest extends BoltUnitTest
             ->will($this->returnValue($this->errorResponses['unknown']));
 
         $this->expectOutputRegex("/PHP Fatal Error: Bolt Generic/");
-        LowlevelException::catchFatalErrors();
+        LowlevelException::catchFatalErrors($this->getApp(), false);
     }
 
     public function testAssertWritableDir()
@@ -370,7 +390,7 @@ class LowlevelChecksTest extends BoltUnitTest
     public function testConfigFileAlreadyExistsSoIgnore()
     {
         $check = $this->getCleanChecker();
-        $check->configChecks = array('config');
+        $check->configChecks = ['config'];
         $this->php
             ->expects($this->at(0))
             ->method('file_exists')
@@ -396,7 +416,7 @@ class LowlevelChecksTest extends BoltUnitTest
     public function testConfigFileCreationErrors()
     {
         $check = $this->getCleanChecker();
-        $check->configChecks = array('config');
+        $check->configChecks = ['config'];
 
         $this->php
             ->expects($this->once())
@@ -419,7 +439,7 @@ class LowlevelChecksTest extends BoltUnitTest
         $check = $this->getCleanChecker();
         $mock = new Mock\Config();
         $mock->$mockMethod();
-        $configObject = new \ArrayObject(array('config' => $mock));
+        $configObject = new \ArrayObject(['config' => $mock]);
         $check->config->app = $configObject;
 
         return $check;
@@ -430,7 +450,7 @@ class LowlevelChecksTest extends BoltUnitTest
         $config = new Standard(TEST_ROOT);
         $check = new LowlevelChecks($config);
         $check->removeCheck('cache');
-        $check->configChecks = array();
+        $check->configChecks = [];
 
         return $check;
     }

@@ -20,13 +20,13 @@ class UserAddTest extends BoltUnitTest
         $tester = new CommandTester($command);
 
         $tester->execute(
-            array(
+            [
                 'username'    => 'test',
                 'displayname' => 'Test',
                 'email'       => 'test@example.com',
                 'password'    => 'test',
                 'role'        => 'admin'
-            )
+            ]
         );
         $result = $tester->getDisplay();
         $this->assertEquals('Successfully created user: test', trim($result));
@@ -40,18 +40,18 @@ class UserAddTest extends BoltUnitTest
         $tester = new CommandTester($command);
 
         $tester->execute(
-            array(
+            [
                 'username'    => 'test',
                 'displayname' => 'Test',
                 'email'       => 'test@example.com',
                 'password'    => 'test',
                 'role'        => 'admin'
-            )
+            ]
         );
         $result = $tester->getDisplay();
-        $this->assertRegexp("/username test already exists/", trim($result));
-        $this->assertRegexp("/email test@example\.com exists/", trim($result));
-        $this->assertRegexp("/display name Test already exists/", trim($result));
+        $this->assertRegExp("/username test already exists/", trim($result));
+        $this->assertRegExp("/email test@example\.com exists/", trim($result));
+        $this->assertRegExp("/display name Test already exists/", trim($result));
     }
 
     public function testFailure()
@@ -62,13 +62,13 @@ class UserAddTest extends BoltUnitTest
         $tester = new CommandTester($command);
 
         $tester->execute(
-            array(
+            [
                 'username'    => 'test',
                 'displayname' => 'Test',
                 'email'       => 'test@example.com',
                 'password'    => 'test',
                 'role'        => 'admin'
-            )
+            ]
         );
         $result = $tester->getDisplay();
         $this->assertEquals("Error creating user: test", trim($result));
@@ -76,10 +76,10 @@ class UserAddTest extends BoltUnitTest
 
     protected function getUserMock($app, $availability = true, $save = true)
     {
-        $users = $this->getMock('Bolt\Users', array('getUsers', 'checkAvailability', 'saveUser'), array($app));
+        $users = $this->getMock('Bolt\Users', ['getUsers', 'checkAvailability', 'saveUser'], [$app]);
         $users->expects($this->any())
             ->method('getUsers')
-            ->will($this->returnValue(array()));
+            ->will($this->returnValue([]));
 
         $users->expects($this->any())
             ->method('checkAvailability')

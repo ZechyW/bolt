@@ -18,14 +18,17 @@ class DatabaseRepairTest extends BoltUnitTest
         $command = new DatabaseRepair($app);
         $tester = new CommandTester($command);
 
-        $tester->execute(array());
+        $tester->execute([]);
         $result = $tester->getDisplay();
         $this->assertEquals("Your database is already up to date.", trim($result));
 
         // Now introduce some changes
-        $app['config']->set('contenttypes/newcontent', array('fields' => array('title' => array('type' => 'text'))));
+        $app['config']->set('contenttypes/newcontent', [
+            'tablename' => 'newcontent',
+            'fields'    => ['title' => ['type' => 'text']]
+        ]);
 
-        $tester->execute(array());
+        $tester->execute([]);
         $result = $tester->getDisplay();
         $this->assertRegExp("/Created table `bolt_newcontent`/", $result);
     }

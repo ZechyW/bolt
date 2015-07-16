@@ -3,7 +3,6 @@
 namespace Bolt\DataCollector;
 
 use Bolt\Application;
-use Bolt\Library as Lib;
 use Bolt\Translation\Translator as Trans;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -36,20 +35,20 @@ class BoltDataCollector extends DataCollector
      */
     public function collect(Request $request, Response $response, \Exception $exception = null)
     {
-        $this->data = array(
+        $this->data = [
             'version'     => $this->app->getVersion(false),
             'name'        => $this->app['bolt_name'],
             'fullversion' => 'Version: ' . $this->app->getVersion(true),
             'payoff'      => 'Sophisticated, lightweight & simple CMS',
-            'aboutlink'   => sprintf("<a href=\"%s\">%s</a>", Lib::path('about'), 'About'),
+            'aboutlink'   => sprintf('<a href="%s">%s</a>', $this->app->generatePath('about'), 'About'),
             'branding'    => null,
             'editlink'    => null,
             'edittitle'   => null
-        );
+        ];
 
         if ($this->app['config']->get('general/branding/provided_by/0')) {
             $this->data['branding'] = sprintf(
-                "%s <a href=\"mailto:%s\">%s</a>",
+                '%s <a href="mailto:%s">%s</a>',
                 Trans::__('Provided by:'),
                 $this->app['config']->get('general/branding/provided_by/0'),
                 $this->app['config']->get('general/branding/provided_by/1')

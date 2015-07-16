@@ -2,8 +2,8 @@
 
 namespace Bolt\Nut;
 
+use Bolt\Configuration\YamlUpdater;
 use Bolt\Exception\FilesystemException;
-use Bolt\YamlUpdater;
 use League\Flysystem\FileNotFoundException;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -11,8 +11,14 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Yaml\Exception\ParseException;
 
+/**
+ * Nut command to set a value in config.yml
+ */
 class ConfigSet extends BaseCommand
 {
+    /**
+     * @see \Symfony\Component\Console\Command\Command::configure()
+     */
     protected function configure()
     {
         $this
@@ -24,6 +30,9 @@ class ConfigSet extends BaseCommand
             ->addOption('backup', 'b', InputOption::VALUE_NONE, 'Make a backup of the config file');
     }
 
+    /**
+     * @see \Symfony\Component\Console\Command\Command::execute()
+     */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $key = $input->getArgument('key');
@@ -57,6 +66,7 @@ class ConfigSet extends BaseCommand
             $result = sprintf('<error>' . $e->getMessage() . '</error>');
         }
 
+        $this->auditLog(__CLASS__, "Config value '$key: $value' set");
         $output->writeln($result);
     }
 }

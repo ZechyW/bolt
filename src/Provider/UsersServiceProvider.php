@@ -4,8 +4,8 @@ namespace Bolt\Provider;
 
 use Bolt\Users;
 use Silex\Application;
-use Symfony\Component\HttpFoundation\Request;
 use Silex\ServiceProviderInterface;
+use Symfony\Component\HttpFoundation\Request;
 
 class UsersServiceProvider implements ServiceProviderInterface
 {
@@ -13,7 +13,8 @@ class UsersServiceProvider implements ServiceProviderInterface
     {
         $app['users'] = $app->share(
             function ($app) {
-                $users = new Users($app);
+                $repo = $app['storage']->getRepository('Bolt\Storage\Entity\Users');
+                $users = new Users($app, $repo);
 
                 return $users;
             }

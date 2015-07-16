@@ -2,22 +2,18 @@
 
 namespace Bolt;
 
+use Bolt\Debug\DebugToolbarEnabler;
 use Bolt\Exception\LowlevelException;
-use Bolt\Helpers\String;
-use Bolt\Library as Lib;
+use Bolt\Helpers\Str;
 use Bolt\Provider\LoggerServiceProvider;
 use Bolt\Provider\PathServiceProvider;
+use Bolt\Provider\WhoopsServiceProvider;
 use Cocur\Slugify\Bridge\Silex\SlugifyServiceProvider;
 use Doctrine\DBAL\DBALException;
 use RandomLib;
 use SecurityLib;
 use Silex;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Stopwatch;
-use Whoops\Handler\JsonResponseHandler;
-use Whoops\Provider\Silex\WhoopsServiceProvider;
 
 class Application extends Silex\Application
 {
@@ -26,11 +22,17 @@ class Application extends Silex\Application
      */
     const DEFAULT_LOCALE = 'en_GB';
 
-    public function __construct(array $values = array())
+    /**
+     * @param array $values
+     */
+    public function __construct(array $values = [])
     {
-        $values['bolt_version'] = '2.2.0';
-        $values['bolt_name'] = 'alpha';
+        $values['bolt_version'] = '2.3.0';
+        $values['bolt_name'] = 'alpha 1';
         $values['bolt_released'] = false; // `true` for stable releases, `false` for alpha, beta and RC.
+
+        /** @internal Parameter to track a deprecated PHP version */
+        $values['deprecated.php'] = version_compare(PHP_VERSION, '5.5.9', '<');
 
         parent::__construct($values);
 
@@ -50,36 +52,38 @@ class Application extends Silex\Application
 
         $this['resources']->setApp($this);
         $this->initConfig();
-        $this->initSession();
+        $this->initLogger();
         $this['resources']->initialize();
 
         $this['debug'] = $this['config']->get('general/debug', false);
-        $this['debugbar'] = false;
 
         // Initialize the 'editlink' and 'edittitle'.
         $this['editlink'] = '';
         $this['edittitle'] = '';
 
         // Initialise the JavaScipt data gateway
-        $this['jsdata'] = array();
+        $this['jsdata'] = [];
     }
 
     protected function initConfig()
     {
-        $this->register(new Provider\ConfigServiceProvider());
+        $this->register(new Provider\DatabaseSchemaProvider())
+            ->register(new Provider\ConfigServiceProvider());
     }
 
     protected function initSession()
     {
-        $this->register(
-            new Silex\Provider\SessionServiceProvider(),
-            array(
-                'session.storage.options' => array(
-                    'name'            => 'bolt_session',
+        $this->register(new Provider\TokenServiceProvider())
+            ->register(new Silex\Provider\SessionServiceProvider(), [
+                'session.storage.options' => [
+                    'name'            => $this['token.session.name'],
+                    'cookie_path'     => $this['resources']->getUrl('root'),
+                    'cookie_domain'   => $this['config']->get('general/cookies_domain'),
                     'cookie_secure'   => $this['config']->get('general/enforce_ssl'),
                     'cookie_httponly' => true
-                )
-            )
+                ],
+                'session.test' => isset($this['session.test']) ? $this['session.test'] : false
+            ]
         );
 
         // Disable Silex's built-in native filebased session handler, and fall back to
@@ -92,8 +96,8 @@ class Application extends Silex\Application
 
     public function initialize()
     {
-        // Initialise logging
-        $this->initLogger();
+        // Set up session handling
+        $this->initSession();
 
         // Set up locale and translations.
         $this->initLocale();
@@ -101,8 +105,8 @@ class Application extends Silex\Application
         // Initialize Twig and our rendering Provider.
         $this->initRendering();
 
-        // Initialize Web Profiler Providers if enabled
-        $this->initProfiler();
+        // Initialize debugging
+        $this->initDebugging();
 
         // Initialize the Database Providers.
         $this->initDatabase();
@@ -110,37 +114,28 @@ class Application extends Silex\Application
         // Initialize the rest of the Providers.
         $this->initProviders();
 
-        // Initialise the Mount points for 'frontend', 'backend' and 'async'.
+        // Calling for BC. Controllers are mounted in ControllerServiceProvider now.
         $this->initMountpoints();
 
         // Initialize enabled extensions before executing handlers.
         $this->initExtensions();
 
         // Initialise the global 'before' handler.
-        $this->before(array($this, 'beforeHandler'));
+        $this->before([$this, 'beforeHandler']);
 
         // Initialise the global 'after' handler.
-        $this->after(array($this, 'afterHandler'));
+        $this->after([$this, 'afterHandler']);
 
-        // Initialise the 'error' handler.
-        $this->error(array($this, 'errorHandler'));
+        // Calling for BC. Initialise the 'error' handler.
+        $this->error([$this, 'errorHandler']);
     }
 
+    /**
+     * Initialize the loggers.
+     */
     public function initLogger()
     {
-        $this->register(new LoggerServiceProvider(), array());
-
-        // Debug log
-        if ($this['config']->get('general/debuglog/enabled')) {
-            $this->register(
-                new Silex\Provider\MonologServiceProvider(),
-                array(
-                    'monolog.name'    => 'bolt',
-                    'monolog.level'   => constant('Monolog\Logger::' . strtoupper($this['config']->get('general/debuglog/level'))),
-                    'monolog.logfile' => $this['resources']->getPath('cache') . '/' . $this['config']->get('general/debuglog/filename')
-                )
-            );
-        }
+        $this->register(new LoggerServiceProvider(), []);
     }
 
     /**
@@ -150,17 +145,17 @@ class Application extends Silex\Application
     {
         $this->register(
             new Silex\Provider\DoctrineServiceProvider(),
-            array(
+            [
                 'db.options' => $this['config']->get('general/database')
-            )
+            ]
         );
-        $this->register(new Database\InitListener());
+        $this->register(new Storage\Database\InitListener());
 
         $this->checkDatabaseConnection();
 
         $this->register(
             new Silex\Provider\HttpCacheServiceProvider(),
-            array('http_cache.cache_dir' => $this['resources']->getPath('cache'))
+            ['http_cache.cache_dir' => $this['resources']->getPath('cache')]
         );
     }
 
@@ -178,14 +173,14 @@ class Application extends Silex\Application
         // A ConnectionException or DriverException could be thrown, we'll catch DBALException to be safe.
         } catch (DBALException $e) {
             // Trap double exceptions caused by throwing a new LowlevelException
-            set_exception_handler(array('\Bolt\Exception\LowlevelException', 'nullHandler'));
+            set_exception_handler(['\Bolt\Exception\LowlevelException', 'nullHandler']);
 
             /*
              * Using Driver here since Platform may try to connect
              * to the database, which has failed since we are here.
              */
             $platform = $this['db']->getDriver()->getName();
-            $platform = String::replaceFirst('pdo_', '', $platform);
+            $platform = Str::replaceFirst('pdo_', '', $platform);
 
             $error = "Bolt could not connect to the configured database.\n\n" .
                      "Things to check:\n" .
@@ -201,6 +196,9 @@ class Application extends Silex\Application
         restore_error_handler();
     }
 
+    /**
+     * Initialize the rendering providers.
+     */
     public function initRendering()
     {
         $this->register(new Provider\TwigServiceProvider());
@@ -211,12 +209,11 @@ class Application extends Silex\Application
     }
 
     /**
-     * Set up the profilers for the toolbar.
+     * Set up the debugging if required.
      */
-    public function initProfiler()
+    public function initDebugging()
     {
-        // On 'after' attach the debug-bar, if debug is enabled.
-        if (!($this['debug'] && ($this['session']->has('user') || $this['config']->get('general/debug_show_loggedoff')))) {
+        if (!$this['debug']) {
             error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED & ~E_USER_DEPRECATED);
 
             return;
@@ -228,91 +225,71 @@ class Application extends Silex\Application
         // Register Whoops, to handle errors for logged in users only.
         if ($this['config']->get('general/debug_enable_whoops')) {
             $this->register(new WhoopsServiceProvider());
-
-            // Add a special handler to deal with AJAX requests
-            if ($this['config']->getWhichEnd() == 'async') {
-                $this['whoops']->pushHandler(new JsonResponseHandler());
-            }
         }
 
+        // Initialize Web Profiler providers
+        $this->initProfiler();
+    }
+
+    /**
+     * Set up the profilers for the toolbar.
+     */
+    public function initProfiler()
+    {
         // Register the Silex/Symfony web debug toolbar.
         $this->register(
             new Silex\Provider\WebProfilerServiceProvider(),
-            array(
-                'profiler.cache_dir'    => $this['resources']->getPath('cache') . '/profiler',
-                'profiler.mount_prefix' => '/_profiler', // this is the default
-            )
+            [
+                'profiler.cache_dir'                => $this['resources']->getPath('cache') . '/profiler',
+                'profiler.mount_prefix'             => '/_profiler', // this is the default
+                'web_profiler.debug_toolbar.enable' => false,
+            ]
         );
+        $this->register(new DebugToolbarEnabler());
 
         // Register the toolbar item for our Database query log.
         $this->register(new Provider\DatabaseProfilerServiceProvider());
 
-        // Register the toolbar item for our bolt nipple.
+        // Register the toolbar item for our Bolt nipple.
         $this->register(new Provider\BoltProfilerServiceProvider());
-
-        // Register the toolbar item for the Twig toolbar item.
-        $this->register(new Provider\TwigProfilerServiceProvider());
-
-        $this['twig.loader.filesystem'] = $this->share(
-            $this->extend(
-                'twig.loader.filesystem',
-                function (\Twig_Loader_Filesystem $filesystem, Application $app) {
-                    $filesystem->addPath(
-                        $app['resources']->getPath('root') . '/vendor/symfony/web-profiler-bundle/Symfony/Bundle/WebProfilerBundle/Resources/views',
-                        'WebProfiler'
-                    );
-                    $filesystem->addPath($app['resources']->getPath('app') . '/view', 'BoltProfiler');
-
-                    return $filesystem;
-                }
-            )
-        );
-
-        // PHP 5.3 does not allow 'use ($this)' in closures.
-        $app = $this;
-        $this->after(
-            function () use ($app) {
-                foreach (Lib::parseTwigTemplates($app['twig.loader.filesystem']) as $template) {
-                    $app['twig.logger']->collectTemplateData($template);
-                }
-            }
-        );
     }
 
     public function initLocale()
     {
-        $this['locale'] = $this['config']->get('general/locale', Application::DEFAULT_LOCALE);
+        $configLocale = (array) $this['config']->get('general/locale', Application::DEFAULT_LOCALE);
 
-        // Set The Timezone Based on the Config, fallback to UTC
-        date_default_timezone_set(
-            $this['config']->get('general/timezone') ?: 'UTC'
-        );
+        // $app['locale'] should only be a single value.
+        $this['locale'] = reset($configLocale);
+
+        // Set the default timezone if provided in the Config
+        date_default_timezone_set($this['config']->get('general/timezone') ?: ini_get('date.timezone') ?: 'UTC');
 
         // for javascript datetime calculations, timezone offset. e.g. "+02:00"
         $this['timezone_offset'] = date('P');
 
-        // Set default locale
-        $locale = array(
-            $this['locale'] . '.UTF-8',
-            $this['locale'] . '.utf8',
-            $this['locale'],
-            Application::DEFAULT_LOCALE . '.UTF-8',
-            Application::DEFAULT_LOCALE . '.utf8',
-            Application::DEFAULT_LOCALE,
-            substr(Application::DEFAULT_LOCALE, 0, 2)
-        );
-        setlocale(LC_ALL, $locale);
+        // Set default locale, for Bolt
+        $locale = [];
+        foreach ($configLocale as $value) {
+            $locale = array_merge($locale, [
+                $value . '.UTF-8',
+                $value . '.utf8',
+                $value,
+                Application::DEFAULT_LOCALE . '.UTF-8',
+                Application::DEFAULT_LOCALE . '.utf8',
+                Application::DEFAULT_LOCALE,
+                substr(Application::DEFAULT_LOCALE, 0, 2)
+            ]);
+        }
+
+        setlocale(LC_ALL, array_unique($locale));
 
         $this->register(
             new Silex\Provider\TranslationServiceProvider(),
-            array('locale_fallbacks' => array(Application::DEFAULT_LOCALE))
+            [
+                'translator.cache_dir' => $this['resources']->getPath('cache/trans'),
+                'locale_fallbacks'     => [Application::DEFAULT_LOCALE]
+            ]
         );
-
-        // Loading stub functions for when intl / IntlDateFormatter isn't available.
-        if (!function_exists('intl_get_error_code')) {
-            require_once $this['resources']->getPath('root/vendor/symfony/locale/Symfony/Component/Locale/Resources/stubs/functions.php');
-            require_once $this['resources']->getPath('root/vendor/symfony/locale/Symfony/Component/Locale/Resources/stubs/IntlDateFormatter.php');
-        }
 
         $this->register(new Provider\TranslationServiceProvider());
     }
@@ -324,53 +301,57 @@ class Application extends Silex\Application
 
         // Setup Swiftmailer, with the selected Mail Transport options: smtp or `mail()`.
         $this->register(new Silex\Provider\SwiftmailerServiceProvider());
-
-        if ($this['config']->get('general/mailoptions')) {
-            // Use the preferred options. Assume it's SMTP, unless set differently.
-            $this['swiftmailer.options'] = $this['config']->get('general/mailoptions');
-        } else {
-            // No Mail transport has been set. We should gently nudge the user to set the mail configuration.
-            // @see: the issue at https://github.com/bolt/bolt/issues/2908
-        }
-
-        if (is_bool($this['config']->get('general/mailoptions/spool'))) {
-            // enable or disable the mail spooler.
-            $this['swiftmailer.use_spool'] = $this['config']->get('general/mailoptions/spool');
-        }
-
-        if ($this['config']->get('general/mailoptions/transport') == 'mail') {
-            // Use the 'mail' transport. Discouraged, but some people want it. ¯\_(ツ)_/¯
-            $this['swiftmailer.transport'] = \Swift_MailTransport::newInstance();
-        }
+        $this->setSwiftmailerOptions();
 
         // Set up our secure random generator.
         $factory = new RandomLib\Factory();
         $this['randomgenerator'] = $factory->getGenerator(new SecurityLib\Strength(SecurityLib\Strength::MEDIUM));
 
-        $this->register(new Silex\Provider\UrlGeneratorServiceProvider())
-            ->register(new Silex\Provider\FormServiceProvider())
+        // Set up forms and use a secure CSRF secret
+        $this->register(new Silex\Provider\FormServiceProvider());
+        $this['form.secret'] = $this->share(function () {
+            if (!$this['session']->isStarted()) {
+                return;
+            } elseif ($secret = $this['session']->get('form.secret')) {
+                return $secret;
+            } else {
+                $secret = $this['randomgenerator']->generate(32);
+                $this['session']->set('form.secret', $secret);
+
+                return $secret;
+            }
+        });
+
+        $this
+            ->register(new Silex\Provider\HttpFragmentServiceProvider())
+            ->register(new Silex\Provider\UrlGeneratorServiceProvider())
             ->register(new Silex\Provider\ValidatorServiceProvider())
             ->register(new Provider\RoutingServiceProvider())
             ->register(new Silex\Provider\ServiceControllerServiceProvider()) // must be after Routing
             ->register(new Provider\PermissionsServiceProvider())
             ->register(new Provider\StorageServiceProvider())
+            ->register(new Provider\AuthenticationServiceProvider())
             ->register(new Provider\UsersServiceProvider())
             ->register(new Provider\CacheServiceProvider())
-            ->register(new Provider\IntegrityCheckerProvider())
             ->register(new Provider\ExtensionServiceProvider())
             ->register(new Provider\StackServiceProvider())
             ->register(new Provider\OmnisearchServiceProvider())
             ->register(new Provider\TemplateChooserServiceProvider())
             ->register(new Provider\CronServiceProvider())
             ->register(new Provider\FilePermissionsServiceProvider())
-            ->register(new Controllers\Upload())
-            ->register(new Controllers\Extend())
+            ->register(new Provider\MenuServiceProvider())
+            ->register(new Provider\UploadServiceProvider())
             ->register(new Provider\FilesystemProvider())
             ->register(new Thumbs\ThumbnailProvider())
             ->register(new Provider\NutServiceProvider())
             ->register(new Provider\GuzzleServiceProvider())
             ->register(new Provider\PrefillServiceProvider())
-            ->register(new SlugifyServiceProvider());
+            ->register(new SlugifyServiceProvider())
+            ->register(new Provider\MarkdownServiceProvider())
+            ->register(new Provider\ControllerServiceProvider())
+            ->register(new Provider\EventListenerServiceProvider())
+            ->register(new Provider\AssetServiceProvider())
+        ;
 
         $this['paths'] = $this['resources']->getPaths();
 
@@ -386,196 +367,80 @@ class Application extends Silex\Application
         );
     }
 
+    /**
+     * Set up the optional parameters for Swiftmailer
+     */
+    private function setSwiftmailerOptions()
+    {
+        if ($this['config']->get('general/mailoptions')) {
+            // Use the preferred options. Assume it's SMTP, unless set differently.
+            $this['swiftmailer.options'] = $this['config']->get('general/mailoptions');
+        }
+
+        if (is_bool($this['config']->get('general/mailoptions/spool'))) {
+            // enable or disable the mail spooler.
+            $this['swiftmailer.use_spool'] = $this['config']->get('general/mailoptions/spool');
+        }
+
+        if ($this['config']->get('general/mailoptions/transport') === 'mail') {
+            // Use the 'mail' transport. Discouraged, but some people want it. ¯\_(ツ)_/¯
+            $this['swiftmailer.transport'] = \Swift_MailTransport::newInstance();
+        }
+    }
+
     public function initExtensions()
     {
+        $this['extensions']->checkLocalAutoloader();
         $this['extensions']->initialize();
     }
 
+    /**
+     * @deprecated To be removed in Bolt 3.0. Use {@see ControllerEvents::MOUNT} instead.
+     */
     public function initMountpoints()
     {
-        if ($proxies = $this['config']->get('general/trustProxies')) {
-            Request::setTrustedProxies($proxies);
-        }
-
-        // Mount the 'backend' on the branding:path setting. Defaults to '/bolt'.
-        $backendPrefix = $this['config']->get('general/branding/path');
-        $this->mount($backendPrefix, new Controllers\Login());
-        $this->mount($backendPrefix, new Controllers\Backend());
-
-        // Mount the 'async' controllers on /async. Not configurable.
-        $this->mount('/async', new Controllers\Async());
-
-        // Mount the 'thumbnail' provider on /thumbs.
-        $this->mount('/thumbs', new Thumbs\ThumbnailProvider());
-
-        // Mount the 'upload' controller on /upload.
-        $this->mount('/upload', new Controllers\Upload());
-
-        // Mount the 'extend' controller on /branding/extend.
-        $this->mount($backendPrefix . '/extend', $this['extend']);
-
-        if ($this['config']->get('general/enforce_ssl')) {
-            foreach ($this['routes'] as $route) {
-                /** @var \Silex\Route $route */
-                $route->requireHttps();
-            }
-        }
-
-        // Mount the 'frontend' controllers, as defined in our Routing.yml
-        $this->mount('', new Controllers\Routing());
-    }
-
-    public function beforeHandler(Request $request)
-    {
-        // Start the 'stopwatch' for the profiler.
-        $this['stopwatch']->start('bolt.app.before');
-
-        if ($response = $this['render']->fetchCachedRequest()) {
-            // Stop the 'stopwatch' for the profiler.
-            $this['stopwatch']->stop('bolt.app.before');
-
-            // Short-circuit the request, return the HTML/response. YOLO.
-            return $response;
-        }
-
-        // Stop the 'stopwatch' for the profiler.
-        $this['stopwatch']->stop('bolt.app.before');
     }
 
     /**
-     * Global 'after' handler. Adds 'after' HTML-snippets and Meta-headers to the output.
-     *
-     * @param Request  $request
-     * @param Response $response
+     * @deprecated since Bolt 2.3 and will be removed in Bolt 3.0.
      */
-    public function afterHandler(Request $request, Response $response)
+    public function beforeHandler()
     {
-        // Start the 'stopwatch' for the profiler.
-        $this['stopwatch']->start('bolt.app.after');
-
-        // Set the 'X-Frame-Options' headers to prevent click-jacking, unless specifically disabled. Backend only!
-        if ($this['config']->getWhichEnd() == 'backend' && $this['config']->get('general/headers/x_frame_options')) {
-            $response->headers->set('X-Frame-Options', 'SAMEORIGIN');
-            $response->headers->set('Frame-Options', 'SAMEORIGIN');
-        }
-
-        // true if we need to consider adding html snippets
-        if (isset($this['htmlsnippets']) && ($this['htmlsnippets'] === true)) {
-            // only add when content-type is text/html
-            if (strpos($response->headers->get('Content-Type'), 'text/html') !== false) {
-                // Add our meta generator tag.
-                $this['extensions']->insertSnippet(Extensions\Snippets\Location::AFTER_META, '<meta name="generator" content="Bolt">');
-
-                // Perhaps add a canonical link.
-
-                if ($this['config']->get('general/canonical')) {
-                    $snippet = sprintf(
-                        '<link rel="canonical" href="%s">',
-                        htmlspecialchars($this['paths']['canonicalurl'], ENT_QUOTES)
-                    );
-                    $this['extensions']->insertSnippet(Extensions\Snippets\Location::AFTER_META, $snippet);
-                }
-
-                // Perhaps add a favicon.
-                if ($this['config']->get('general/favicon')) {
-                    $snippet = sprintf(
-                        '<link rel="shortcut icon" href="//%s%s%s">',
-                        htmlspecialchars($this['paths']['canonical'], ENT_QUOTES),
-                        htmlspecialchars($this['paths']['theme'], ENT_QUOTES),
-                        htmlspecialchars($this['config']->get('general/favicon'), ENT_QUOTES)
-                    );
-                    $this['extensions']->insertSnippet(Extensions\Snippets\Location::AFTER_META, $snippet);
-                }
-
-                // Do some post-processing.. Hooks, snippets.
-                $html = $this['render']->postProcess($response);
-
-                $response->setContent($html);
-            }
-        }
-
-        // Stop the 'stopwatch' for the profiler.
-        $this['stopwatch']->stop('bolt.app.after');
     }
 
     /**
-     * Handle errors thrown in the application. Set up whoops, if set in conf.
-     *
-     * @param \Exception $exception
-     *
-     * @return Response
+     * @deprecated since Bolt 2.3 and will be removed in Bolt 3.0.
      */
-    public function errorHandler(\Exception $exception)
+    public function afterHandler()
     {
-        // If we are in maintenance mode and current user is not logged in, show maintenance notice.
-        // @see Controllers\Frontend::before()
-        if ($this['config']->get('general/maintenance_mode')) {
-            $user = $this['users']->getCurrentUser();
-            if ($user['userlevel'] < 2) {
-                $template = $this['config']->get('general/maintenance_template');
-                $body = $this['render']->render($template);
-
-                return new Response($body, Response::HTTP_SERVICE_UNAVAILABLE);
-            }
-        }
-
-        // Log the error message
-        $message = $exception->getMessage();
-        $this['logger.system']->critical($message, array('event' => 'exception', 'exception' => $exception));
-
-        $trace = $exception->getTrace();
-        foreach ($trace as $key => $value) {
-            if (!empty($value['file']) && strpos($value['file'], '/vendor/') > 0) {
-                unset($trace[$key]['args']);
-            }
-
-            // Don't display the full path.
-            if (isset($trace[$key]['file'])) {
-                $trace[$key]['file'] = str_replace($this['resources']->getPath('root'), '[root]', $trace[$key]['file']);
-            }
-        }
-
-        $end = $this['config']->getWhichEnd();
-        if (($exception instanceof HttpException) && ($end == 'frontend')) {
-            if ($exception->getStatusCode() == Response::HTTP_FORBIDDEN) {
-                $content = $this['storage']->getContent($this['config']->get('general/access_denied'), array('returnsingle' => true));
-            } else {
-                $content = $this['storage']->getContent($this['config']->get('general/notfound'), array('returnsingle' => true));
-            }
-
-            // Then, select which template to use, based on our 'cascading templates rules'
-            if ($content instanceof Content && !empty($content->id)) {
-                $template = $this['templatechooser']->record($content);
-
-                return $this['render']->render($template, $content->getTemplateContext());
-            }
-
-            $message = "The page could not be found, and there is no 'notfound' set in 'config.yml'. Sorry about that.";
-        }
-
-        $context = array(
-            'class'   => get_class($exception),
-            'message' => $message,
-            'code'    => $exception->getCode(),
-            'trace'   => $trace,
-        );
-
-        // Note: This uses the template from app/theme_defaults. Not app/view/twig.
-        return $this['render']->render('error.twig', array('context' => $context));
     }
 
     /**
-     * TODO Can this be removed?
+     * @deprecated since Bolt 2.3 and will be removed in Bolt 3.0.
+     */
+    public function errorHandler()
+    {
+    }
+
+    /**
+     * @deprecated Remove with the monolithic Bolt\Storage in 3.0
      *
      * @param string $name
      *
-     * @return bool
+     * @return boolean
      */
     public function __isset($name)
     {
         return isset($this[$name]);
     }
 
+    /**
+     * Get the Bolt version string
+     *
+     * @param boolean $long TRUE returns 'version name', FALSE 'version'
+     *
+     * @return string
+     */
     public function getVersion($long = true)
     {
         if ($long) {
@@ -596,7 +461,7 @@ class Application extends Silex\Application
      *
      * @return string The generated path
      */
-    public function generatePath($route, $parameters = array())
+    public function generatePath($route, $parameters = [])
     {
         return $this['url_generator']->generate($route, $parameters);
     }

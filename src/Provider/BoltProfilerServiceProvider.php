@@ -14,7 +14,7 @@ class BoltProfilerServiceProvider implements ServiceProviderInterface
         // Note: we use this workaround, because setting $app['data_collector.templates'][0]
         // does not work.
         $templates = array_merge(
-            array(array('bolt', '@BoltProfiler/toolbar/bolt.html.twig')),
+            [['bolt', '@BoltProfiler/toolbar/bolt.html.twig']],
             $app['data_collector.templates']
         );
 
@@ -25,12 +25,23 @@ class BoltProfilerServiceProvider implements ServiceProviderInterface
 
         $app['data_collectors'] = array_merge(
             $app['data_collectors'],
-            array(
+            [
                 'bolt' => $app->share(
                     function ($app) {
                         return new BoltDataCollector($app);
                     }
                 ),
+            ]
+        );
+
+        $app['twig.loader.filesystem'] = $app->share(
+            $app->extend(
+                'twig.loader.filesystem',
+                function (\Twig_Loader_Filesystem $filesystem, Application $app) {
+                    $filesystem->addPath($app['resources']->getPath('app/view'), 'BoltProfiler');
+
+                    return $filesystem;
+                }
             )
         );
     }

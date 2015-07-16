@@ -1,7 +1,7 @@
 <?php
 namespace Bolt\Extensions;
 
-use Bolt\Exception\PackageManagerException;
+use GuzzleHttp\Client;
 
 /**
  * Class to provide querying of the Bolt Extensions repo as a
@@ -9,21 +9,29 @@ use Bolt\Exception\PackageManagerException;
  *
  * @author Ross Riley <riley.ross@gmail.com>
  **/
-
 class ExtensionsInfoService
 {
     public $site;
     public $urls;
     public $format = 'json';
 
+    /** @var \GuzzleHttp\Client|\Guzzle\Service\Client */
+    private $client;
+    /** @var boolean */
+    private $isRetry;
+
     /**
-     * @param $site string
-     * @param $urls array
-     **/
-    public function __construct($site, $urls = array())
+     * Constructor function.
+     *
+     * @param \GuzzleHttp\Client|\Guzzle\Service\Client $client
+     * @param string                                    $site
+     * @param array                                     $urls
+     */
+    public function __construct(Client $client, $site, $urls = [])
     {
-        $this->site = $site;
-        $this->urls = $urls;
+        $this->client = $client;
+        $this->site   = $site;
+        $this->urls   = $urls;
     }
 
     public function all()
@@ -33,10 +41,18 @@ class ExtensionsInfoService
         return $this->execute($url);
     }
 
+    /**
+     * Make an extension package info request.
+     *
+     * @param string $package Composer package name 'author/extension'
+     * @param string $bolt    Bolt version number
+     *
+     * @return string|boolean
+     */
     public function info($package, $bolt)
     {
         $url = $this->urls['info'];
-        $params = array('package' => $package, 'bolt' => $bolt);
+        $params = ['package' => $package, 'bolt' => $bolt];
 
         return $this->execute($url, $params);
     }
@@ -46,22 +62,30 @@ class ExtensionsInfoService
         $this->format = $format;
     }
 
-    public function execute($url, $params = array())
+    /**
+     * Execute the query.
+     *
+     * @param string $url
+     * @param array  $params
+     *
+     * @return string|boolean
+     */
+    public function execute($url, $params = [])
     {
-        if (!ini_get('allow_url_fopen')) {
-            throw new PackageManagerException('Please enable "allow_url_fopen" in your php.ini file to use extensions');
-        }
-        $endpoint = rtrim($this->site, '/') . '/' . ltrim($url, '/') . '?' . http_build_query($params);
-        $endpoint = rtrim($endpoint, '?');
-        try {
-            $result = file_get_contents($endpoint);
-        } catch (\Exception $e) {
-            $result = false;
-        }
-        if ($this->format === 'json') {
-            return json_decode($result);
-        }
+        $uri = rtrim(rtrim($this->site, '/') . '/' . ltrim($url, '/') . '?' . http_build_query($params), '?');
 
-        return $result;
+        try {
+            $result = $this->client->get($uri, ['timeout' => 10])->getBody(true);
+
+            return ($this->format === 'json') ? json_decode($result) : (string) $result;
+        } catch (\Exception $e) {
+            if ($this->isRetry) {
+                return false;
+            }
+            $this->isRetry = true;
+            $this->site = str_replace('https://', 'http://', $this->site);
+
+            return $this->execute($url, $params);
+        }
     }
 }

@@ -28,23 +28,43 @@ class NutServiceProvider implements ServiceProviderInterface
 
         $app['nut.commands'] = $app->share(
             function ($app) {
-                return array(
+                return [
                     new Nut\CronRunner($app),
                     new Nut\CacheClear($app),
                     new Nut\Info($app),
                     new Nut\LogTrim($app),
                     new Nut\LogClear($app),
                     new Nut\DatabaseCheck($app),
+                    new Nut\DatabaseExport($app),
+                    new Nut\DatabaseImport($app),
+                    new Nut\DatabasePrefill($app),
                     new Nut\DatabaseRepair($app),
                     new Nut\TestRunner($app),
                     new Nut\ConfigGet($app),
                     new Nut\ConfigSet($app),
                     new Nut\Extensions($app),
+                    new Nut\ExtensionsAutoloader($app),
                     new Nut\ExtensionsEnable($app),
                     new Nut\ExtensionsDisable($app),
                     new Nut\UserAdd($app),
+                    new Nut\UserResetPassword($app),
                     new Nut\UserRoleAdd($app),
                     new Nut\UserRoleRemove($app),
+                ];
+            }
+        );
+
+        $app['nut.commands.add'] = $app->protect(
+            function (Command $command) use ($app) {
+                $app['nut.commands'] = $app->share(
+                    $app->extend(
+                        'nut.commands',
+                        function ($commands) use ($command) {
+                            $commands[] = $command;
+
+                            return $commands;
+                        }
+                    )
                 );
             }
         );
@@ -59,19 +79,5 @@ class NutServiceProvider implements ServiceProviderInterface
 
     public function boot(Application $app)
     {
-    }
-
-    public static function addCommand(Application $app, Command $command)
-    {
-        $app['nut.commands'] = $app->share(
-            $app->extend(
-                'nut.commands',
-                function ($commands) use ($command) {
-                    $commands[] = $command;
-
-                    return $commands;
-                }
-            )
-        );
     }
 }

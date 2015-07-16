@@ -20,12 +20,12 @@ class LogClearTest extends BoltUnitTest
         $command = new LogClear($app);
         $dialog = new DialogHelper();
         $dialog->setInputStream($this->getInputStream("Yes\n"));
-        $command->setHelperSet(new HelperSet(array($dialog)));
+        $command->setHelperSet(new HelperSet([$dialog]));
         $tester = new CommandTester($command);
 
-        $tester->execute(array());
+        $tester->execute([]);
         $result = $tester->getDisplay();
-        $this->assertRegexp('/Activity logs cleared/', $result);
+        $this->assertRegExp('/System & change logs cleared/', $result);
     }
 
     // public function testCancel()
@@ -33,12 +33,12 @@ class LogClearTest extends BoltUnitTest
     //     $app = $this->getApp();
     //     // Test abort
     //     $command = new LogClear($app);
-    //     $command->setHelperSet(new Helperset(array(new DialogHelper)));
+    //     $command->setHelperSet(new Helperset([new DialogHelper]));
     //     $dialog = $command->getHelper('dialog');
     //     $dialog->setInputStream($this->getInputStream("Test\n"));
     //     $tester = new CommandTester($command);
 
-    //     $tester->execute(array());
+    //     $tester->execute([]);
     //     $result = $tester->getDisplay();
     //     $this->assertNotRegexp('/Activity logs cleared/', $result);
     // }

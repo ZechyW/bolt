@@ -1,3 +1,5 @@
+/* global module */
+
 /*
  * COPY: Copy files and folders
  */
@@ -10,7 +12,7 @@ module.exports = {
             expand: true,
             flatten: true,
             src: [
-                '<%= path.src.node %>/font-awesome/fonts/*'
+                '<%= path.src.bower %>/font-awesome/fonts/*'
             ],
             filter: 'isFile',
             dest: '<%= path.dest.fonts %>/'
@@ -46,6 +48,12 @@ module.exports = {
                 flatten: true,
                 src: '<%= path.src.lib %>/ckeditor/lang/*.js',
                 dest: '<%= path.dest.js %>/locale/ckeditor'
+            }, {
+                // Copy skin
+                expand: true,
+                cwd: '<%= path.src.lib %>/ckeditor-skin',
+                src: 'boltcke/**',
+                dest: '<%= path.dest.js %>/ckeditor/skins'
             }
         ]
     },
@@ -63,12 +71,4 @@ module.exports = {
             }
         }
     },
-
-    /*
-     * TARGET:  Copies jquery-gomap.min.js
-     */
-    installJqueryGomap: {
-        src: '<%= path.src.lib %>/jquery-gomap/jquery-gomap.min.js',
-        dest: '<%= path.dest.js %>/jquery-gomap.min.js'
-    }
 };

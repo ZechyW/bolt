@@ -15,12 +15,13 @@ composer.phar
 composer.lock
 
 # Files related to testing
-tests/codeception/_log
-tests/codeception/*/*Tester.php
-tests/phpunit/report
-tests/phpunit/resources/*
-!tests/phpunit/resources/db/
-app/config/permissions.yml.codeception-backup
+tests/codeception/_output
+tests/codeception/_support/*Tester.php
+tests/codeception/_support/_generated/
+tests/codeception/acceptance/AcceptanceTester.php
+tests/codeception/functional/FunctionalTester.php
+tests/codeception/unit/UnitTester.php
+*.codeception-backup
 /bolt.db
 
 # Grunt stuff
@@ -28,8 +29,13 @@ node_modules
 bower_components
 npm-debug.log
 .sass-cache
-*.map
 app/src/tmp/
+app/src/docs/
+app/src/grunt-local/
+
+# Sourcemaps
+app/view/maps/
+*.map
 
 # File-system cruft and temporary files
 scrutinizer.phar

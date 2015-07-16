@@ -13,6 +13,8 @@ use Symfony\Component\Filesystem\Filesystem;
 class ScriptHandler
 {
     /**
+     * Install basic assets and create needed directories.
+     *
      * @param CommandEvent $event
      * @param array|bool   $options
      */
@@ -41,7 +43,7 @@ class ScriptHandler
         $filesystem->remove($targetDir);
         $filesystem->mkdir($targetDir, $dirMode);
 
-        foreach (array('css', 'fonts', 'img', 'js', 'lib') as $dir) {
+        foreach (['css', 'fonts', 'img', 'js'] as $dir) {
             $filesystem->mirror(__DIR__ . '/../../app/view/' . $dir, $targetDir . '/view/' . $dir);
         }
 
@@ -51,6 +53,7 @@ class ScriptHandler
 
         if (!$filesystem->exists($webDir . '/theme/')) {
             $filesystem->mkdir($webDir . '/theme/', $dirMode);
+            $filesystem->mirror(__DIR__ . '/../../theme', $webDir . '/theme');
         }
 
         // The first check handles the case where the bolt-web-dir is different to the root.
@@ -67,6 +70,9 @@ class ScriptHandler
         $appDir = $options['bolt-app-dir'];
         if (!$filesystem->exists($appDir)) {
             $filesystem->mkdir($appDir, $dirMode);
+            $filesystem->mkdir($appDir . '/database/', $dirMode);
+            $filesystem->mkdir($appDir . '/cache/',    $dirMode);
+            $filesystem->mkdir($appDir . '/config/',   $dirMode);
         }
     }
 
@@ -75,22 +81,24 @@ class ScriptHandler
         $webroot = $event->getIO()->askConfirmation('<info>Do you want your web directory to be a separate folder to root? [y/n] </info>', false);
 
         if ($webroot) {
-            $webname = $event->getIO()->ask('<info>What do you want your public directory to be named? [default: public] </info>', 'public');
-            $webname = trim($webname, '/');
+            $webname  = $event->getIO()->ask('<info>What do you want your public directory to be named? [default: public] </info>', 'public');
+            $webname  = trim($webname, '/');
             $assetDir = './' . $webname;
         } else {
-            $webname = null;
+            $webname  = null;
             $assetDir = '.';
         }
 
         $generator = new BootstrapGenerator($webroot, $webname);
         $generator->create();
-        $options = array_merge(self::getOptions($event), array('bolt-web-dir' => $assetDir));
+        $options = array_merge(self::getOptions($event), ['bolt-web-dir' => $assetDir]);
         self::installAssets($event, $options);
-        $event->getIO()->write("<info>Your project has been setup</info>");
+        $event->getIO()->write('<info>Your project has been setup</info>');
     }
 
     /**
+     * Get a default set of options.
+     *
      * @param CommandEvent $event
      *
      * @return array
@@ -98,11 +106,11 @@ class ScriptHandler
     protected static function getOptions(CommandEvent $event)
     {
         $options = array_merge(
-            array(
+            [
                 'bolt-web-dir'  => 'web',
                 'bolt-app-dir'  => 'app',
                 'bolt-dir-mode' => 0777
-            ),
+            ],
             $event->getComposer()->getPackage()->getExtra()
         );
 

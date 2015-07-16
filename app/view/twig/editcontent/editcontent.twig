@@ -29,24 +29,37 @@
         savedon:        __('Saved on:') ~ ' <strong></strong> <small>(' ~ dateChanged ~ ')</small></p>',
         newRecord:      context.content.id != 0 ? false : true,
         msgNotSaved:    __('contenttypes.generic.saving-impossible', {'%contenttype%': context.contenttype.slug}),
-        pathsRoot:      paths.root,
-        msgSaving:      __('Saving …'),
         hasGroups:      context.has.tabs,
         singularSlug:   context.contenttype.singular_slug,
     } %}
 
     {% set attr_form = {
         _bind:   ['editcontent', bind_data],
-        class:   "form-horizontal" ~ (context.has.tabs ? ' tab-content' : ''),
-        enctype: "multipart/form-data",
-        id:      "editcontent",
-        method:  "post",
-        role:    "form",
+        class:   'form-horizontal' ~ (context.has.tabs ? ' tab-content' : ''),
+        enctype: 'multipart/form-data',
+        id:      'editcontent',
+        method:  'post',
+        role:    'form',
+    } %}
+
+    {% set attributes = {
+        hid_editreferrer: {
+            name_id:  'editreferrer',
+            type:     'hidden',
+            value:    editreferrer|default(''),
+        },
+
+        hid_contenttype: {
+            name_id:   'contenttype',
+            readonly:  true,
+            type:      'hidden',
+            value:     context.contenttype.slug,
+        },
     } %}
 
     {% set alertbox %}
-        <div id="%NOTICE_ID%" class="alert alert-danger">
-            <button class="close" data-dismiss="alert">×</button>
+        <div id="%NOTICE_ID%" class="alert alert-danger alert-dismissible">
+            <button type="button" class="close" data-dismiss="alert">×</button>
             <label for="%FIELD_ID%">{{ __('Field “%FIELD_NAME%”:') }}</label>
             %MESSAGE%
         </div>
@@ -56,7 +69,10 @@
         'alertbox':     alertbox|trim,
         'generic_msg':  __('Is required or needs to match a pattern!'),
     }) }}
-
+    {{ data('editcontent.msg', {
+        'change_quit': __('You have unfinished changes on this page. If you continue without saving, you will lose these changes.'),
+        'saving':      __('Saving …')
+    }) }}
 
     <div class="row">
         <div class="col-md-8">
@@ -77,24 +93,36 @@
             <form{{ macro.attr(attr_form) }}>
                 {% include '_sub/_csrf_token.twig' %}
 
+                <input{{ macro.attr(attributes.hid_editreferrer) }}>
+                <input{{ macro.attr(attributes.hid_contenttype) }}>
+
                 {% for group_name, group in context.groups %}
 
                     {% if context.has.tabs %}
                         <div class="tab-pane{{ group.is_active ? ' active' : '' }}" id="{{ group.id }}">
                     {% endif %}
 
-                    {% if group_name == 'relations' %}
-                        {% include 'editcontent/_relations.twig' %}
+                    {% for key in group.fields %}
 
-                    {% elseif group_name == 'taxonomy' %}
-                        {% include 'editcontent/_taxonomies.twig' %}
+                        {% if key == '*relations' %}
+                            {% include 'editcontent/_relations.twig' %}
 
-                    {% elseif group_name == 'meta' %}
-                        {% include 'editcontent/_meta.twig' %}
+                        {% elseif key == '*taxonomy' %}
+                            {% include 'editcontent/_taxonomies.twig' %}
 
-                    {% else %}
-                        {% include 'editcontent/_fields.twig' %}
-                    {% endif %}
+                        {% elseif key == '*meta' %}
+                            <div data-fieldtype="meta">
+                                {% include 'editcontent/fields/_meta.twig' %}
+                            </div>
+
+                        {% elseif key == '*template' %}
+                            {% include 'editcontent/_templatefields.twig' %}
+
+                        {% else %}
+                            {% include 'editcontent/_field.twig' %}
+                        {% endif %}
+
+                    {% endfor %}
 
                     {% if context.has.tabs %}
                         </div>
@@ -102,10 +130,12 @@
 
                 {% endfor %}
 
+                <input type="hidden" name="_live-editor-preview" value=""/>
+
                 {% include 'editcontent/_buttons.twig' %}
             </form>
 
-            {% include 'editcontent/_includes.twig' %}
+            {% include 'editcontent/_includes-data.twig' %}
 
         </div>
 
@@ -115,3 +145,7 @@
     </div>
 
 {% endblock page_main %}
+
+{% block page_main_extra_content %}
+    {% include 'editcontent/_live-editor.twig' %}
+{% endblock %}

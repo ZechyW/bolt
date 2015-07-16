@@ -10,39 +10,17 @@ use Silex;
  */
 class ContenttypesKeygen
 {
-    /**
-     * Injected Application object.
-     *
-     * @var Silex\Application
-     */
+    /** @var \Silex\Application */
     private $app;
-
-    /**
-     * Hints for translations.
-     *
-     * @var array
-     */
+    /** @var array Hints for translations. */
     private $hints;
-
-    /**
-     * Hints for translations.
-     *
-     * @var array
-     */
+    /** @var array Translated strings. */
     private $translation;
-
-    /**
-     * Translations read from file.
-     *
-     * @var array
-     */
+    /** @var array ContentType names. */
+    private $ctnames;
+    /** @var array Translations read from file. */
     private $saved;
-
-    /**
-     * Translatable strings.
-     *
-     * @var array
-     */
+    /** @var array Translatable strings. */
     private $translatables;
 
     /**
@@ -54,9 +32,9 @@ class ContenttypesKeygen
      */
     public function __construct(Silex\Application $app, array $translatables, array $savedTranslations)
     {
-        $this->hints = array();
-        $this->translation = array();
-        $this->ctnames = array();
+        $this->hints = [];
+        $this->translation = [];
+        $this->ctnames = [];
         $this->app = $app;
         $this->translatables = $translatables;
         $this->saved = $savedTranslations;
@@ -101,11 +79,11 @@ class ContenttypesKeygen
             $keyprefix = 'contenttypes.' . $this->slugifyKey($ctname) . '.';
 
             // Names & description
-            $setkeys = array(
+            $setkeys = [
                 'name.plural'   => 'name',
                 'name.singular' => 'singular_name',
                 'description'   => 'description',
-            );
+            ];
             foreach ($setkeys as $setkey => $getkey) {
                 $key = $keyprefix . $setkey;
 
@@ -140,7 +118,7 @@ class ContenttypesKeygen
         foreach ($this->app['config']->get('contenttypes') as $ctname => $ctype) {
             $keyprefix = 'contenttypes.' . $this->slugifyKey($ctname) . '.group.';
 
-            if (isset($ctype['groups'])) {
+            if (isset($ctype['groups']) && is_array($ctype['groups'])) {
                 foreach ($ctype['groups'] as $groupname) {
                     $key = $keyprefix . $this->slugifyKey($groupname);
 
@@ -178,7 +156,7 @@ class ContenttypesKeygen
                     $generic = Trans::__($key);
                     // If not translated, add hint
                     if ($generic !== $key) {
-                        $replacement = array();
+                        $replacement = [];
                         if (strpos($generic, '%contenttypes%') !== false) {
                             $replacement['%contenttypes%'] = $ctname;
                         } elseif (strpos($generic, '%contenttype%') !== false) {
@@ -220,10 +198,10 @@ class ContenttypesKeygen
      *
      * @param string $key
      *
-     * @return mixed
+     * @return string
      */
     private function fallback($key)
     {
-        return Trans::__($key, array('DEFAULT' => false), 'contenttypes');
+        return Trans::__($key, ['DEFAULT' => false], 'contenttypes');
     }
 }

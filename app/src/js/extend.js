@@ -80,6 +80,7 @@ var BoltExtender = Object.extend(Object, {
             controller.find('.extension-postinstall').hide();
             controller.find('.install-response-container').hide();
             controller.find('.install-version-container').hide();
+            controller.find('.postinstall-footer').hide();
             controller.find('#installModal .loader').show();
         });
     },
@@ -100,19 +101,31 @@ var BoltExtender = Object.extend(Object, {
                     ext = data.installs[e];
 
                     // Add an install button
-                    target.append(bolt.data.extend.packages.install_new.subst({
-                        '%PACKAGE%': ext.name,
-                        '%VERSION%': ext.version,
-                        '%PRETTYVERSION%': ext.prettyversion}));
+                    target.append(
+                        Bolt.data(
+                            'extend.packages.install_new',
+                            {
+                                '%PACKAGE%': ext.name,
+                                '%VERSION%': ext.version,
+                                '%PRETTYVERSION%': ext.prettyversion
+                            }
+                        )
+                    );
                 }
                 for (e in data.updates) {
                     ext = data.updates[e];
 
                     // Add an update button
-                    target.append(bolt.data.extend.packages.install_update.subst({
-                        '%PACKAGE%': ext.name,
-                        '%VERSION%': ext.version,
-                        '%PRETTYVERSION%': ext.prettyversion}));
+                    target.append(
+                        Bolt.data(
+                            'extend.packages.install_update',
+                            {
+                                '%PACKAGE%': ext.name,
+                                '%VERSION%': ext.version,
+                                '%PRETTYVERSION%': ext.prettyversion
+                            }
+                        )
+                    );
                 }
                 active_console.hide();
                 controller.find('.update-list').show();
@@ -240,7 +253,7 @@ var BoltExtender = Object.extend(Object, {
 
                 // Nothing is installed
                 if (nadda) {
-                	 html = bolt.data.extend.packages.empty;
+                	 html = Bolt.data('extend.packages.empty');
                      active_console.hide();
                 }
 
@@ -259,7 +272,7 @@ var BoltExtender = Object.extend(Object, {
 
         for (var e in data) {
         	var ext = data[e],
-        	conf = bolt.data.extend.packages,
+        	conf = Bolt.data('extend.packages'),
         	authors = '',
         	keywords = '',
         	i = 0;
@@ -364,11 +377,15 @@ var BoltExtender = Object.extend(Object, {
             aclass = version.buildStatus === 'approved' ? ' label-success' : '';
 
             // Add a row and replace macro values
-            tpl += bolt.data.extend.packages.versions.subst({
-                '%NAME%': version.name,
-                '%VERSION%': version.version,
-                '%CLASS%%': aclass,
-                '%BUILDSTATUS%': version.buildStatus});
+            tpl += Bolt.data(
+                'extend.packages.versions',
+                {
+                    '%NAME%': version.name,
+                    '%VERSION%': version.version,
+                    '%CLASS%%': aclass,
+                    '%BUILDSTATUS%': version.buildStatus
+                }
+            );
         }
 
         return tpl;
@@ -424,16 +441,20 @@ var BoltExtender = Object.extend(Object, {
 
     extensionPostInstall: function (extension) {
         var controller = this;
-        controller.find('.extension-postinstall .ext-link').attr('href', extension.source);
         controller.find('.extension-postinstall').show();
         controller.find('.extension-postinstall .modal-success').show();
+
+        controller.find('.postinstall-footer .ext-link').attr('href', extension.source);
+        controller.find('.postinstall-footer').show();
     },
 
     extensionFailedInstall: function(extension) {
         var controller = this;
-        controller.find('.extension-postinstall .ext-link').attr("href", extension.source);
         controller.find('.extension-postinstall').show();
         controller.find('.extension-postinstall .modal-failed').show();
+
+        controller.find('.postinstall-footer .ext-link').attr("href", extension.source);
+        controller.find('.postinstall-footer').show();
     },
 
     themePostInstall: function (extension) {
@@ -445,6 +466,7 @@ var BoltExtender = Object.extend(Object, {
         var name = extension.name.split(/\/+/).pop();
         controller.find('.theme-postinstall .theme-generator').data('theme', extension.name);
         controller.find('.theme-postinstall #theme-name').val(name);
+        controller.find('.postinstall-footer').show();
     },
 
     generateTheme: function (e) {
@@ -610,19 +632,25 @@ var BoltExtender = Object.extend(Object, {
             // Clean up Composer messages
             var msg = errObj.error.message.replace(/(<http)/g, '<a href="http').replace(/(\w+>)/g, '">this link<\/a>');
 
-            html = bolt.data.extend.packages.error.subst({
-                '%ERROR_TYPE%': 'Composer Error',
-                '%ERROR_MESSAGE%': msg
-            });
+            html = Bolt.data(
+                'extend.packages.error',
+                {
+                    '%ERROR_TYPE%': 'Composer Error',
+                    '%ERROR_MESSAGE%': msg
+                }
+            );
         } else {
             // Sanitize PHP error file paths
             var file = errObj.error.file.replace(new RegExp(rootpath, 'g'), '');
 
-            html = bolt.data.extend.packages.error.subst({
-                '%ERROR_TYPE%': 'PHP Error',
-                '%ERROR_MESSAGE%': errObj.error.message,
-                '%ERROR_LOCATION%': 'File: ' + file + '::' + errObj.error.line
-            });
+            html = Bolt.data(
+                'extend.packages.error',
+                {
+                    '%ERROR_TYPE%': 'PHP Error',
+                    '%ERROR_MESSAGE%': errObj.error.message,
+                    '%ERROR_LOCATION%': 'File: ' + file + '::' + errObj.error.line
+                }
+            );
         }
 
         return html;

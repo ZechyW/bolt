@@ -3,28 +3,14 @@
 namespace Bolt\Composer\Action;
 
 use Composer\Json\JsonFile;
-use Silex\Application;
 
 /**
  * Checks for installable, or upgradeable packages.
  *
  * @author Gawain Lynch <gawain.lynch@gmail.com>
  */
-final class CheckPackage
+final class CheckPackage extends BaseAction
 {
-    /**
-     * @var \Silex\Application
-     */
-    private $app;
-
-    /**
-     * @param $app \Silex\Application
-     */
-    public function __construct(Application $app)
-    {
-        $this->app = $app;
-    }
-
     /**
      * Run a check for package(s).
      *
@@ -32,13 +18,13 @@ final class CheckPackage
      */
     public function execute()
     {
-        $packages = array('updates' => array(), 'installs' => array());
+        $packages = ['updates' => [], 'installs' => []];
 
         // Get known installed packages
-        $rootpack = $this->app['extend.manager']->showPackage('installed');
+        $rootpack = $this->app['extend.action']['show']->execute('installed');
 
         // Get the packages that a set as "required" in the JSON file
-        $file = new JsonFile($this->app['extend.manager']->getOption('composerjson'));
+        $file = new JsonFile($this->getOption('composerjson'));
         $json = $file->read();
         $jsonpack = $json['require'];
 
@@ -47,7 +33,7 @@ final class CheckPackage
         if (!empty($jsonpack)) {
             foreach ($jsonpack as $package => $packageInfo) {
                 if (!array_key_exists($package, $rootpack)) {
-                    $remote = $this->app['extend.manager']->getFactory()->findBestVersionForPackage($package);
+                    $remote = $this->findBestVersionForPackage($package);
 
                     // If a 'best' version is found, and there is a version mismatch then
                     // propose as an update. Making the assumption that Composer isn't
@@ -61,7 +47,7 @@ final class CheckPackage
 
         // For installed packages, see if there is a valid update
         foreach ($rootpack as $package => $data) {
-            $remote = $this->app['extend.manager']->getFactory()->findBestVersionForPackage($package);
+            $remote = $this->findBestVersionForPackage($package);
 
             // If a 'best' version is found, and there is a version mismatch then
             // propose as an update. Making the assumption that Composer isn't

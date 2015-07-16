@@ -1,3 +1,5 @@
+/* global module */
+
 /*
  * WATCH: Run predefined tasks whenever watched file patterns are added, changed or deleted
  */
@@ -15,7 +17,8 @@ module.exports = {
             '<%= path.src.sass %>/**/*.scss'
         ],
         tasks: [
-            'sass:boltCss'
+            'sass:boltCss',
+            'postcss:boltCss'
         ]
     },
 
@@ -23,7 +26,7 @@ module.exports = {
      * TARGET:  Build Bolts js file changes
      */
     boltJs: {
-        files: '<%= files.boltJs %>',
+        files: '<%= path.src.js %>/**/*.js',
         tasks: [
             'jshint:boltJs',
             'uglify:boltJs'
@@ -37,7 +40,8 @@ module.exports = {
         files: [
             'Gruntfile.js',
             'grunt/*.js',
-            'grunt/*.yml'
+            'grunt/*.yml',
+            'grunt-local/*.js'
         ],
         options: {
             reload: true

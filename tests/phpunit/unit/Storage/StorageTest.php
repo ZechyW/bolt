@@ -3,10 +3,10 @@ namespace Bolt\Tests\Storage;
 
 use Bolt\Content;
 use Bolt\Events\StorageEvents;
-use Bolt\Exception\StorageException;
 use Bolt\Storage;
 use Bolt\Tests\BoltUnitTest;
 use Bolt\Tests\Mocks\LoripsumMock;
+use Doctrine\DBAL\Connection;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -16,6 +16,11 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class StorageTest extends BoltUnitTest
 {
+    public function testSetup()
+    {
+        $this->resetDb();
+    }
+
     public function testGetContentObject()
     {
         $app = $this->getApp();
@@ -25,26 +30,27 @@ class StorageTest extends BoltUnitTest
 
         $fields = $app['config']->get('contenttypes/pages/fields');
 
-        $mock = $this->getMock('Bolt\Content', null, array($app), 'Pages');
-        $content = $storage->getContentObject(array('class' => 'Pages', 'fields' => $fields));
+        $mock = $this->getMock('Bolt\Content', null, [$app], 'Pages');
+        $content = $storage->getContentObject(['class' => 'Pages', 'fields' => $fields]);
         $this->assertInstanceOf('Pages', $content);
         $this->assertInstanceOf('Bolt\Content', $content);
 
         // Test that a class not instanceof Bolt\Content fails
-        $mock = $this->getMock('stdClass', null, array(), 'Failing');
+        $mock = $this->getMock('stdClass', null, [], 'Failing');
         $this->setExpectedException('Exception', 'Failing does not extend \Bolt\Content.');
-        $content = $storage->getContentObject(array('class' => 'Failing', 'fields' => $fields));
+        $content = $storage->getContentObject(['class' => 'Failing', 'fields' => $fields]);
     }
 
     public function testPreFill()
     {
         $app = $this->getApp();
+        $app['users']->users = [1 => $this->addDefaultUser($app)];
         $prefillMock = new LoripsumMock();
         $app['prefill'] = $prefillMock;
 
         $app['config']->set('general/changelog/enabled', true);
         $storage = new Storage($app);
-        $output = $storage->prefill(array('showcases'));
+        $output = $storage->prefill(['showcases']);
         $this->assertRegExp('#Added#', $output);
         $this->assertRegExp('#Done#', $output);
 
@@ -101,7 +107,7 @@ class StorageTest extends BoltUnitTest
         $app['dispatcher']->addListener(StorageEvents::PRE_DELETE, $listener);
         $app['dispatcher']->addListener(StorageEvents::POST_DELETE, $listener);
 
-        $storage->deleteContent(array('slug' => 'showcases'), 1);
+        $storage->deleteContent(['slug' => 'showcases'], 1);
 
         $this->assertFalse($storage->getContent('showcases/1'));
         $this->assertEquals(2, $delete);
@@ -112,10 +118,12 @@ class StorageTest extends BoltUnitTest
         $app = $this->getApp();
         $app['request'] = Request::create('/');
         $storage = new Storage($app);
+
         $fetch1 = $storage->getContent('showcases/2');
-        $this->assertEquals(false, $fetch1->get('ownerid'));
+        $this->assertEquals(1, $fetch1->get('ownerid'));
         $result = $storage->updateSingleValue('showcases', 2, 'ownerid', '10');
         $this->assertEquals(2, $result);
+
         $fetch2 = $storage->getContent('showcases/2');
         $this->assertEquals('10', $fetch2->get('ownerid'));
 
@@ -147,7 +155,7 @@ class StorageTest extends BoltUnitTest
         $this->assertFalse($result);
 
         // Test filters
-        $result = $storage->searchContent('lorem', array('showcases'), array('showcases' => array('title' => 'nonexistent')));
+        $result = $storage->searchContent('lorem', ['showcases'], ['showcases' => ['title' => 'nonexistent']]);
         $this->assertTrue($result['query']['valid']);
         $this->assertEquals(0, $result['no_of_results']);
     }
@@ -157,7 +165,7 @@ class StorageTest extends BoltUnitTest
         $app = $this->getApp();
         $app['request'] = Request::create('/');
         $storage = new Storage($app);
-        $results = $storage->searchAllContentTypes(array('title' => 'lorem'));
+        $results = $storage->searchAllContentTypes(['title' => 'lorem']);
     }
 
     public function testSearchContentType()
@@ -178,6 +186,43 @@ class StorageTest extends BoltUnitTest
 
     public function testGetContent()
     {
+    }
+
+    public function testGetContentSortOrderFromContentType()
+    {
+        $app = $this->getApp();
+        $app['request'] = Request::create('/');
+        $db = $this->getDbMockBuilder($app['db'])
+            ->setMethods(['fetchAll'])
+            ->getMock();
+        $app['db'] = $db;
+        $db->expects($this->any())
+            ->method('fetchAll')
+            ->willReturn([]);
+        $storage = new StorageMock($app);
+
+        // Test sorting is pulled from contenttype when not specified
+        $app['config']->set('contenttypes/entries/sort', '-id');
+        $storage->getContent('entries');
+        $this->assertSame('ORDER BY "id" DESC', $storage->queries[0]['queries'][0]['order']);
+    }
+
+    public function testGetContentReturnSingleLimits1()
+    {
+        $app = $this->getApp();
+        $app['request'] = Request::create('/');
+        $db = $this->getDbMockBuilder($app['db'])
+            ->setMethods(['fetchAll'])
+            ->getMock();
+        $app['db'] = $db;
+        $db->expects($this->any())
+            ->method('fetchAll')
+            ->willReturn([]);
+        $storage = new StorageMock($app);
+
+        // Test returnsingle will set limit to 1
+        $storage->getContent('entries', ['returnsingle' => true]);
+        $this->assertSame(1, $storage->queries[0]['parameters']['limit']);
     }
 
     public function testGetSortOrder()
@@ -226,5 +271,24 @@ class StorageTest extends BoltUnitTest
 
     public function testGetPager()
     {
+    }
+
+    private function getDbMockBuilder(Connection $db)
+    {
+        return $this->getMockBuilder('\Doctrine\DBAL\Connection')
+            ->setConstructorArgs([$db->getParams(), $db->getDriver(), $db->getConfiguration(), $db->getEventManager()])
+            ->enableOriginalConstructor()
+        ;
+    }
+}
+
+class StorageMock extends Storage
+{
+    public $queries = [];
+
+    protected function executeGetContentQueries($decoded)
+    {
+        $this->queries[] = $decoded;
+        return parent::executeGetContentQueries($decoded);
     }
 }

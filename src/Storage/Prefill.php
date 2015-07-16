@@ -2,7 +2,7 @@
 
 namespace Bolt\Storage;
 
-use Guzzle\Service\Client;
+use GuzzleHttp\Client;
 
 /**
  * Handles Fetching Prefill Content from an API service.
@@ -14,7 +14,7 @@ class Prefill
     /**
      * Constructor function.
      *
-     * @param \Guzzle\Service\Client $client
+     * @param \GuzzleHttp\Client $client
      */
     public function __construct(Client $client)
     {
@@ -33,6 +33,6 @@ class Prefill
     {
         $uri = $base . ltrim($request, '/');
 
-        return $this->client->get($uri, array('timeout' => 10))->send()->getBody(true);
+        return $this->client->get($uri, ['timeout' => 10])->getBody();
     }
 }

@@ -9,11 +9,11 @@ class Local extends LocalBase
 {
     const VISIBILITY_READONLY = 'readonly';
 
-    protected static $permissions = array(
+    protected static $permissions = [
         'public'    => 0755,
         'readonly'  => 0744,
         'private'   => 0700
-    );
+    ];
 
     public function __construct($root)
     {
@@ -21,6 +21,9 @@ class Local extends LocalBase
         $this->setPathPrefix($realRoot);
     }
 
+    /**
+     * {@inheritdoc}
+     */
     protected function ensureDirectory($root)
     {
         if (!is_dir($root) && !@mkdir($root, 0755, true)) {
@@ -30,6 +33,9 @@ class Local extends LocalBase
         return realpath($root);
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function write($path, $contents, Config $config)
     {
         $location = $this->applyPathPrefix($path);
@@ -40,6 +46,9 @@ class Local extends LocalBase
         return parent::write($path, $contents, $config);
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function writeStream($path, $resource, Config $config)
     {
         $location = $this->applyPathPrefix($path);
@@ -50,6 +59,9 @@ class Local extends LocalBase
         return parent::writeStream($path, $resource, $config);
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function update($path, $contents, Config $config)
     {
         $location = $this->applyPathPrefix($path);
@@ -66,6 +78,9 @@ class Local extends LocalBase
         return compact('path', 'size', 'contents', 'mimetype');
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function rename($path, $newpath)
     {
         $location = $this->applyPathPrefix($path);
@@ -78,6 +93,9 @@ class Local extends LocalBase
         return rename($location, $destination);
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function copy($path, $newpath)
     {
         $location = $this->applyPathPrefix($path);
@@ -89,6 +107,9 @@ class Local extends LocalBase
         return copy($location, $destination);
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function delete($path)
     {
         $location = $this->applyPathPrefix($path);
@@ -100,6 +121,9 @@ class Local extends LocalBase
         return unlink($location);
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function createDir($dirname, Config $config)
     {
         $location = $this->applyPathPrefix($dirname);
@@ -111,9 +135,12 @@ class Local extends LocalBase
             return false;
         }
 
-        return array('path' => $dirname, 'type' => 'dir');
+        return ['path' => $dirname, 'type' => 'dir'];
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function deleteDir($dirname)
     {
         $location = $this->applyPathPrefix($dirname);
@@ -159,6 +186,13 @@ class Local extends LocalBase
         return compact('visibility');
     }
 
+    /**
+     * Check is a user can write to a given location.
+     *
+     * @param string $location
+     *
+     * @return boolean
+     */
     protected function userCanWrite($location)
     {
         $worldPermissions = substr(sprintf('%o', fileperms($location)), -1, 1);
@@ -168,7 +202,15 @@ class Local extends LocalBase
 
         $permissions = substr(sprintf('%o', fileperms($location)), -3, 1);
         $fileOwnerId = fileowner($location);
-        $procOwnerId = posix_getuid();
+
+        if (function_exists('posix_getuid')) {
+            $uhandler = 'posix_getuid';
+        } else {
+            $uhandler = 'getmyuid';
+        }
+
+        $procOwnerId = call_user_func($uhandler);
+
         if ($fileOwnerId === $procOwnerId && (int) $permissions >= 6) {
             return true;
         }
@@ -176,11 +218,25 @@ class Local extends LocalBase
         return false;
     }
 
+    /**
+     * Check is a group can write to a given location.
+     *
+     * @param string $location
+     *
+     * @return boolean
+     */
     protected function groupCanWrite($location)
     {
         $permissions = substr(sprintf('%o', fileperms($location)), -2, 1);
         $fileOwnerGroup = filegroup($location);
-        $procOwnerGroup = posix_getgid();
+
+        if (function_exists('posix_getgid')) {
+            $ghandler = 'posix_getgid';
+        } else {
+            $ghandler = 'getmygid';
+        }
+
+        $procOwnerGroup = call_user_func($ghandler);
         if ($fileOwnerGroup === $procOwnerGroup && (int) $permissions >= 6) {
             return true;
         }
@@ -188,6 +244,13 @@ class Local extends LocalBase
         return false;
     }
 
+    /**
+     * Check is a user can read from a given location.
+     *
+     * @param string $location
+     *
+     * @return boolean
+     */
     protected function userCanRead($location)
     {
         $worldPermissions = substr(sprintf('%o', fileperms($location)), -1);
@@ -197,7 +260,15 @@ class Local extends LocalBase
 
         $permissions = substr(sprintf('%o', fileperms($location)), -3, 1);
         $fileOwnerId = fileowner($location);
-        $procOwnerId = posix_getuid();
+
+        if (function_exists('posix_getuid')) {
+            $uhandler = 'posix_getuid';
+        } else {
+            $uhandler = 'getmyuid';
+        }
+
+        $procOwnerId = call_user_func($uhandler);
+
         if ($fileOwnerId === $procOwnerId && (int) $permissions >= 5) {
             return true;
         }
@@ -205,11 +276,26 @@ class Local extends LocalBase
         return false;
     }
 
+    /**
+     * Check is a group can read from a given location.
+     *
+     * @param string $location
+     *
+     * @return boolean
+     */
     protected function groupCanRead($location)
     {
         $permissions = substr(sprintf('%o', fileperms($location)), -2, 1);
         $fileOwnerGroup = filegroup($location);
-        $procOwnerGroup = posix_getgid();
+
+        if (function_exists('posix_getgid')) {
+            $ghandler = 'posix_getgid';
+        } else {
+            $ghandler = 'getmygid';
+        }
+
+        $procOwnerGroup = call_user_func($ghandler);
+
         if ($fileOwnerGroup === $procOwnerGroup && (int) $permissions >= 5) {
             return true;
         }

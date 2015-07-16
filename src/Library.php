@@ -33,6 +33,25 @@ class Library
     }
 
     /**
+     * Convert a size string, such as 5M to bytes.
+     *
+     * @param string $size
+     *
+     * @return double
+     */
+    public static function filesizeToBytes($size)
+    {
+        $unit = preg_replace('/[^bkmgtpezy]/i', '', $size);
+        $size = preg_replace('/[^0-9\.]/', '', $size);
+
+        if ($unit) {
+            return round($size * pow(1024, stripos('bkmgtpezy', $unit[0])));
+        } else {
+            return round($size);
+        }
+    }
+
+    /**
      * Gets the extension (if any) of a filename.
      *
      * @param string $filename
@@ -99,7 +118,7 @@ class Library
 
         preg_match_all('| => (.+\.twig)|i', $str, $matches);
 
-        $templates = array();
+        $templates = [];
 
         foreach ($matches[1] as $match) {
             $templates[] = str_replace($app['resources']->getPath('rootpath'), '', $match);
@@ -117,7 +136,7 @@ class Library
      *
      * @return string
      */
-    public static function path($path, $param = array(), $add = '')
+    public static function path($path, $param = [], $add = '')
     {
         $app = ResourceManager::getApp();
 
@@ -126,7 +145,7 @@ class Library
         }
 
         if (empty($param)) {
-            $param = array();
+            $param = [];
         }
 
         return $app['url_generator']->generate($path, $param) . $add;
@@ -139,32 +158,11 @@ class Library
      * @param array  $param
      * @param string $add
      *
-     * @return string
+     * @return \Symfony\Component\HttpFoundation\RedirectResponse
      */
-    public static function redirect($path, $param = array(), $add = '')
+    public static function redirect($path, $param = [], $add = '')
     {
-        $app = ResourceManager::getApp();
-
-        // If the user doesn't have access to the backend, redirect them to the frontend
-        if ($path === 'dashboard' && $app['users']->isValidSession() && !$app['users']->isAllowed('dashboard')) {
-            $app['session']->getFlashBag()->clear();
-            $path = 'homepage';
-        }
-
-        // Only set the 'retreat' when redirecting to 'login' but not FROM logout.
-        if (($path === 'login') && ($app['request']->get('_route') !== 'logout')) {
-            $app['session']->set(
-                'retreat',
-                array(
-                    'route'  => $app['request']->get('_route'),
-                    'params' => $app['request']->get('_route_params')
-                )
-            );
-        } else {
-            $app['session']->set('retreat', '');
-        }
-
-        return $app->redirect(self::path($path, $param, $add));
+        return ResourceManager::getApp()->redirect(self::path($path, $param, $add));
     }
 
     /**
@@ -275,8 +273,6 @@ class Library
         // disallow user to interrupt
         ignore_user_abort(true);
 
-        $oldUmask = umask(0111);
-
         // open the file and lock it.
         if ($fp = fopen($filename, 'a')) {
             if (flock($fp, LOCK_EX | LOCK_NB)) {
@@ -317,7 +313,6 @@ class Library
                 'Current path: ' . getcwd() . '.';
             throw new LowlevelException($message);
         }
-        umask($oldUmask);
 
         // reset the users ability to interrupt the script
         ignore_user_abort(false);

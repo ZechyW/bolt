@@ -2,15 +2,18 @@
 
 namespace Bolt\Provider;
 
-use Bolt\Logger\ChangeLog;
 use Bolt\Logger\DeprecatedLog;
+use Bolt\Logger\FlashLogger;
 use Bolt\Logger\Handler\RecordChangeHandler;
 use Bolt\Logger\Handler\SystemHandler;
 use Bolt\Logger\Manager;
+use Bolt\Storage\Repository;
 use Monolog\Formatter\WildfireFormatter;
 use Monolog\Handler\FirePHPHandler;
+use Monolog\Handler\NullHandler;
 use Monolog\Logger;
 use Silex\Application;
+use Silex\Provider\MonologServiceProvider;
 use Silex\ServiceProviderInterface;
 
 /**
@@ -39,7 +42,8 @@ class LoggerServiceProvider implements ServiceProviderInterface
         $app['logger.system'] = $app->share(
             function ($app) {
                 $log = new Logger('logger.system');
-                $log->pushHandler(new SystemHandler($app));
+                $log->pushHandler($app['monolog.handler']);
+                $log->pushHandler(new SystemHandler($app, Logger::INFO));
 
                 return $log;
             }
@@ -67,23 +71,45 @@ class LoggerServiceProvider implements ServiceProviderInterface
             }
         );
 
+        // System log
+        $app['logger.flash'] = $app->share(
+            function ($app) {
+                $log = new FlashLogger();
+
+                return $log;
+            }
+        );
+
         // Manager
         $app['logger.manager'] = $app->share(
             function ($app) {
-                $mgr = new Manager($app);
+                $changeRepository = $app['storage']->getRepository('Bolt\Storage\Entity\LogChange');
+                $systemRepository = $app['storage']->getRepository('Bolt\Storage\Entity\LogSystem');
+                $mgr = new Manager($app, $changeRepository, $systemRepository);
 
                 return $mgr;
             }
         );
 
-        // Change Log Manager
-        $app['logger.manager.change'] = $app->share(
-            function ($app) {
-                $mgr = new ChangeLog($app);
-
-                return $mgr;
-            }
+        $app->register(
+                new MonologServiceProvider(),
+                [
+                    'monolog.name'    => 'bolt',
+                    'monolog.level'   => constant('Monolog\Logger::' . strtoupper($app['config']->get('general/debuglog/level'))),
+                    'monolog.logfile' => $app['resources']->getPath('cache') . '/' . $app['config']->get('general/debuglog/filename')
+                ]
         );
+
+        // If we're not debugging, just send to /dev/null
+        if (!$app['config']->get('general/debuglog/enabled')) {
+            $app['monolog.handler'] = function () {
+                return new NullHandler();
+            };
+        }
+
+        $app['logger.debug'] = function () use ($app) {
+            return $app['monolog'];
+        };
     }
 
     public function boot(Application $app)

@@ -5,8 +5,14 @@ namespace Bolt\Nut;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+/**
+ * Nut command to perform a database consistency check command
+ */
 class DatabaseCheck extends BaseCommand
 {
+    /**
+     * @see \Symfony\Component\Console\Command\Command::configure()
+     */
     protected function configure()
     {
         $this
@@ -14,18 +20,21 @@ class DatabaseCheck extends BaseCommand
             ->setDescription('Check the database for missing tables and/or columns.');
     }
 
+    /**
+     * @see \Symfony\Component\Console\Command\Command::execute()
+     */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $messages = $this->app['integritychecker']->checkTablesIntegrity();
+        $response = $this->app['schema']->checkTablesIntegrity();
 
-        if (!empty($messages)) {
-            $output->writeln("<info>Modifications required:</info>");
-            foreach ($messages as $line) {
-                $output->writeln(" - " . str_replace("tt>", "info>", $line) . "");
-            }
-            $output->writeln("\nOne or more fields/tables are missing from the Database. Please run 'nut database:update' to fix this.");
+        if (!$response->hasResponses()) {
+            $output->writeln('<info>The database is OK.</info>');
         } else {
-            $output->writeln("\nThe database is OK.");
+            $output->writeln('<comment>Modifications required:</comment>');
+            foreach ($response->getResponseStrings() as $messages) {
+                $output->writeln('<info> - ' . $messages . '</info>');
+            }
+            $output->writeln("<comment>One or more fields/tables are missing from the Database. Please run 'nut database:update' to fix this.</comment>");
         }
     }
 }

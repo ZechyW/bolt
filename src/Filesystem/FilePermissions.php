@@ -2,8 +2,8 @@
 
 namespace Bolt\Filesystem;
 
+use Bolt\Application;
 use Bolt\Library as Lib;
-use Silex\Application;
 
 /**
  * Use to check if an access to a file is allowed.
@@ -12,31 +12,16 @@ use Silex\Application;
  */
 class FilePermissions
 {
-    /**
-     * @var \Bolt\Application
-     */
+    /** @var \Bolt\Application */
     protected $app;
-
-    /**
-     * List of Filesystem prefixes that are editable.
-     *
-     * @var string[]
-     */
-    protected $allowedPrefixes = array();
-
-    /**
-     * Regex list represented editable resources.
-     *
-     * @var array
-     */
-    protected $allowed = array();
-
-    /**
-     * Regex list represented resources forbidden for edition.
-     *
-     * @var array
-     */
-    protected $blocked = array();
+    /** @var string[] List of Filesystem prefixes that are editable. */
+    protected $allowedPrefixes = [];
+    /** @var array Regex list represented editable resources. */
+    protected $allowed = [];
+    /** @var array Regex list represented resources forbidden for edition. */
+    protected $blocked = [];
+    /** @var double Maximum upload size allowed by PHP, in bytes. */
+    protected $maxUploadSize;
 
     /**
      * Constructor, initialize filters rules.
@@ -47,17 +32,17 @@ class FilePermissions
     {
         $this->app = $app;
 
-        $this->allowedPrefixes = array(
+        $this->allowedPrefixes = [
             'config',
             'files',
             'theme',
-        );
+        ];
 
-        $this->blocked = array(
+        $this->blocked = [
             '#.php$#',
             '#\.htaccess#',
             '#\.htpasswd#'
-        );
+        ];
     }
 
     /**
@@ -114,8 +99,44 @@ class FilePermissions
         return (in_array($extension, $allowedExtensions));
     }
 
+    /**
+     * Get the array of configured acceptable file extensions.
+     *
+     * @return array
+     */
     public function getAllowedUploadExtensions()
     {
         return $this->app['config']->get('general/accept_file_types');
+    }
+
+    /**
+     * Get the maximum upload size the server is configured to accept.
+     *
+     * @return double
+     */
+    public function getMaxUploadSize()
+    {
+        if (!isset($this->maxUploadSize)) {
+            $size = Lib::filesizeToBytes(ini_get('post_max_size'));
+
+            $uploadMax = Lib::filesizeToBytes(ini_get('upload_max_filesize'));
+            if (($uploadMax > 0) && ($uploadMax < $size)) {
+                $size = $uploadMax;
+            }
+
+            $this->maxUploadSize = $size;
+        }
+
+        return $this->maxUploadSize;
+    }
+
+    /**
+     * Get the max upload value in a formatted string.
+     *
+     * @return string
+     */
+    public function getMaxUploadSizeNice()
+    {
+        return Lib::formatFilesize($this->getMaxUploadSize());
     }
 }

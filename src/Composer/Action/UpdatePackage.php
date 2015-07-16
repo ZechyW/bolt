@@ -5,28 +5,14 @@ namespace Bolt\Composer\Action;
 use Bolt\Exception\PackageManagerException;
 use Bolt\Helpers\Arr;
 use Composer\Installer;
-use Silex\Application;
 
 /**
  * Composer update package class.
  *
  * @author Gawain Lynch <gawain.lynch@gmail.com>
  */
-final class UpdatePackage
+final class UpdatePackage extends BaseAction
 {
-    /**
-     * @var \Silex\Application
-     */
-    private $app;
-
-    /**
-     * @param $app \Silex\Application
-     */
-    public function __construct(Application $app)
-    {
-        $this->app = $app;
-    }
-
     /**
      * Update packages.
      *
@@ -37,15 +23,15 @@ final class UpdatePackage
      *
      * @return int 0 on success or a positive error code on failure
      */
-    public function execute(array $packages = array(), array $options = array())
+    public function execute(array $packages = [], array $options = [])
     {
         /** @var $composer \Composer\Composer */
-        $composer = $this->app['extend.manager']->getComposer();
-        $io = $this->app['extend.manager']->getIO();
-        $packageManagerOptions = $this->app['extend.manager']->getOptions();
+        $composer = $this->getComposer();
+        $io = $this->getIO();
+        $packageManagerOptions = $this->app['extend.action.options'];
 
         // Handle passed in options
-        if (!$options) {
+        if (!empty($options)) {
             $options = Arr::mergeRecursiveDistinct($packageManagerOptions, $options);
         } else {
             $options = $packageManagerOptions;
@@ -56,27 +42,14 @@ final class UpdatePackage
         $optimize = $config->get('optimize-autoloader');
 
         // Set preferred install method
-        $preferSource = false; // Forces installation from package sources when possible, including VCS information.
-        $preferDist = false;
-
-        switch ($config->get('preferred-install')) {
-            case 'source':
-                $preferSource = true;
-                break;
-            case 'dist':
-                $preferDist = true;
-                break;
-            case 'auto':
-            default:
-                break;
-        }
+        $prefer = $this->getPreferedTarget($config->get('preferred-install'));
 
         try {
             $install
                 ->setDryRun($options['dryrun'])
                 ->setVerbose($options['verbose'])
-                ->setPreferSource($preferSource)
-                ->setPreferDist($preferDist)
+                ->setPreferSource($prefer['source'])
+                ->setPreferDist($prefer['dist'])
                 ->setDevMode(!$options['nodev'])
                 ->setDumpAutoloader(!$options['noautoloader'])
                 ->setRunScripts(!$options['noscripts'])
@@ -92,7 +65,7 @@ final class UpdatePackage
             return $install->run();
         } catch (\Exception $e) {
             $msg = __CLASS__ . '::' . __FUNCTION__ . ' recieved an error from Composer: ' . $e->getMessage() . ' in ' . $e->getFile() . '::' . $e->getLine();
-            $this->app['logger.system']->critical($msg, array('event' => 'exception', 'exception' => $e));
+            $this->app['logger.system']->critical($msg, ['event' => 'exception', 'exception' => $e]);
 
             throw new PackageManagerException($e->getMessage(), $e->getCode(), $e);
         }

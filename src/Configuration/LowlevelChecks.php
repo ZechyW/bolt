@@ -9,21 +9,21 @@ class LowlevelChecks
     public $config;
     public $disableApacheChecks = false;
 
-    public $checks = array(
+    public $checks = [
         'magicQuotes',
         'safeMode',
         'cache',
         'apache'
-    );
+    ];
 
-    public $configChecks = array(
+    public $configChecks = [
         'config',
         'menu',
         'contenttypes',
         'taxonomy',
         'routing',
         'permissions'
-    );
+    ];
 
     public $magicQuotes;
     public $safeMode;
@@ -46,13 +46,24 @@ class LowlevelChecks
         $this->mysqlLoaded = extension_loaded('pdo_mysql');
     }
 
+    /**
+     * Remove a check from the list causing it to be skipped.
+     *
+     * @param string $check
+     */
     public function removeCheck($check)
     {
         if (in_array($check, $this->checks)) {
-            $this->checks = array_diff($this->checks, array($check));
+            $this->checks = array_diff($this->checks, [$check]);
         }
     }
 
+    /**
+     * Add a check
+     *
+     * @param string  $check
+     * @param boolean $top
+     */
     public function addCheck($check, $top = false)
     {
         if (!in_array($check, $this->checks)) {
@@ -173,7 +184,7 @@ class LowlevelChecks
             return;
         }
 
-        if (!in_array($driver, array('pdo_mysql', 'pdo_pgsql'))) {
+        if (!in_array($driver, ['pdo_mysql', 'pdo_pgsql'])) {
             throw LowLevelDatabaseException::unsupportedDriver($driver);
         }
 

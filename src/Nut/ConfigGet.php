@@ -2,8 +2,8 @@
 
 namespace Bolt\Nut;
 
+use Bolt\Configuration\YamlUpdater;
 use Bolt\Exception\FilesystemException;
-use Bolt\YamlUpdater;
 use League\Flysystem\FileNotFoundException;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -11,8 +11,14 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Yaml\Exception\ParseException;
 
+/**
+ * Nut command to get a value in config.yml
+ */
 class ConfigGet extends BaseCommand
 {
+    /**
+     * @see \Symfony\Component\Console\Command\Command::configure()
+     */
     protected function configure()
     {
         $this
@@ -22,6 +28,9 @@ class ConfigGet extends BaseCommand
             ->addOption('file', 'f', InputOption::VALUE_OPTIONAL, "Specify config file to use");
     }
 
+    /**
+     * @see \Symfony\Component\Console\Command\Command::execute()
+     */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $key = $input->getArgument('key');
@@ -36,8 +45,8 @@ class ConfigGet extends BaseCommand
             $yaml = new YamlUpdater($this->app, $file);
             $match = $yaml->get($key);
 
-            if (!empty($match)) {
-                $result = sprintf("%s: %s", $key, $match['value']);
+            if (null !== $match) {
+                $result = sprintf("%s: %s", $key, $match);
             } else {
                 $result = sprintf("<error>The key '%s' was not found in %s.</error>", $key, $file);
             }

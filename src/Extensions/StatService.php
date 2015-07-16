@@ -7,9 +7,9 @@ use Bolt\Application;
 class StatService
 {
     public $app;
-    public $urls = array(
+    public $urls = [
         'install' => 'stat/install/%s/%s'
-    );
+    ];
 
     /**
      * @param Application $app
@@ -30,9 +30,9 @@ class StatService
         $url = sprintf($this->app['extend.site'] . $this->urls['install'], $package, $version);
 
         try {
-            $this->app['guzzle.client']->head($url)->send();
+            $this->app['guzzle.client']->head($url);
         } catch (\Exception $e) {
-            $this->app['logger.system']->critical($e->getMessage(), array('event' => 'exception', 'exception' => $e));
+            $this->app['logger.system']->critical($e->getMessage(), ['event' => 'exception', 'exception' => $e]);
         }
     }
 }
