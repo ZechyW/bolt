@@ -1,10 +1,12 @@
 <?php
 namespace Bolt\Exception;
 
-use Bolt\Application;
+use Silex\Application;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\Request;
 
+/**
+ * @deprecated Deprecated since 3.2, to be removed in 4.0. @see \Bolt\Exception\BootException
+ */
 class LowlevelException extends \Exception
 {
     public static $html = <<<HTML
@@ -39,8 +41,9 @@ class LowlevelException extends \Exception
     %info%
 
     <ul>
-        <li><a href="http://docs.bolt.cm/installation"><span class="hide"> * http://docs.bolt.cm/installation - </span>Bolt documentation - Setup</a></li>
-        <li><a href="http://stackoverflow.com/questions/tagged/bolt-cms"><span class="hide"> * http://stackoverflow.com/questions/tagged/bolt-cms - </span>Bolt questions on Stack Overflow</a></li>
+        <li><a href="https://docs.bolt.cm/installation/installation"><span class="hide"> * https://docs.bolt.cm/installation/installation - </span>Bolt documentation - Setup</a></li>
+        <li><a href="https://discuss.bolt.cm/"><span class="hide"> * https://discuss.bolt.cm/ - </span>The Bolt discussion forum</a></li>
+        <li><a href="https://bolt.cm/community"><span class="hide"> * https://bolt.cm/community - </span>IRC, Slack or Twitter - Bolt Community</a></li>
     </ul>
 
     </div>
@@ -58,6 +61,8 @@ HTML;
     out. Be sure to include the exact error message you're getting!</p>
 HTML;
 
+    public static $screen;
+
     /**
      * Print a 'low level' error page, and quit. The user has to fix something.
      *
@@ -70,10 +75,11 @@ HTML;
      */
     public function __construct($message, $code = null, $previous = null)
     {
+        parent::__construct(strip_tags($message), $code, $previous);
         $html = self::$html;
         $info = self::$info;
 
-        $output = str_replace('%error_title%', 'Bolt - Fatal Error', $html);
+        $output = str_replace('%error_title%', 'Bolt - Fatal error', $html);
         $message = nl2br($message);
         $output = str_replace('%error%', $message, $output);
         $output = str_replace('%info%', $info, $output);
@@ -86,11 +92,15 @@ HTML;
         // expose the information to hosts on the whitelist.
 
         // Determine if we're on the command line. If so, don't output HTML.
-        if (php_sapi_name() == 'cli') {
+        if (php_sapi_name() === 'cli') {
+            if ($previous instanceof \Exception) {
+                $output .= "\n\nException message:\n" . $previous->getMessage() . "\n\n";
+            }
+
             $output = self::cleanHTML($output);
         }
 
-        echo $output;
+        self::$screen = $output;
     }
 
     /**
@@ -116,6 +126,12 @@ HTML;
      */
     public static function catchFatalErrors(Application $app, $flush = true)
     {
+        if (self::$screen !== null) {
+            echo self::$screen;
+
+            return;
+        }
+
         // Get last error, if any
         $error = error_get_last();
 
@@ -138,32 +154,29 @@ HTML;
             $isExtensionError = strpos($error['file'], $app['resources']->getPath('extensions'));
 
             // Assemble error trace
-            $errorblock  = '<code>Error: ' . $error['message'] . '</code><br>';
+            $errorblock  = '<code style="display:block; white-space: pre-wrap;">Error: ' . $error['message'] . '</code><br>';
             $errorblock .= '<code>File:  ' . $error['file'] . '</code><br>';
             $errorblock .= '<code>Line:  ' . $error['line'] . '</code><br><br>';
 
             if ($isBoltCoreError === 0) {
-                $html = str_replace('%error_title%', 'PHP Fatal Error: Bolt Core', $html);
+                $html = str_replace('%error_title%', 'PHP Fatal error: Bolt core', $html);
                 $html = str_replace('%info%', '', $html);
                 $message = $errorblock;
             } elseif ($isVendorError === 0) {
-                $html = str_replace('%error_title%', 'PHP Fatal Error: Vendor Library', $html);
+                $html = str_replace('%error_title%', 'PHP Fatal error: Vendor library', $html);
                 $html = str_replace('%info%', '', $html);
                 $message = $errorblock;
             } elseif ($isExtensionError === 0) {
-                self::attemptExtensionRecovery($app, $error);
-
                 $base = str_replace($app['resources']->getPath('extensions'), '', $error['file']);
                 $parts = explode(DIRECTORY_SEPARATOR, ltrim($base, '/'));
                 $package = $parts[1] . '/' . $parts[2];
 
-                $delete = 'extensions' . DIRECTORY_SEPARATOR . $parts[0] . DIRECTORY_SEPARATOR . $parts[1] . DIRECTORY_SEPARATOR . $parts[2];
-
-                $html = str_replace('%error_title%', 'PHP Fatal Error: Bolt Extensions', $html);
+                $html = str_replace('%error_title%', 'PHP Fatal error: Bolt extensions', $html);
                 $html = str_replace(
                     '%info%',
-                    '<p>You will only be able to continue by manually deleting the extension that is installed at:</p>' .
-                    '<code>' . $delete . '</code><br><br>',
+                    '<p>You will only be able to continue by disabling the extension by adding the following to app/config/extensions.yml:</p>' .
+                    '<p><code style="display:block;">' . $parts[1] . ':<br>' .
+                    '&nbsp;&nbsp;&nbsp;&nbsp;' . $parts[2] . ': false</code></p>',
                     $html
                 );
                 $message  = '<h4>There is a fatal error in the \'' . $package . '\' extension ' .
@@ -171,7 +184,7 @@ HTML;
                 $message .= $errorblock;
             } else {
                 // Unknown
-                $html = str_replace('%error_title%', 'PHP Fatal Error: Bolt Generic', $html);
+                $html = str_replace('%error_title%', 'PHP Fatal error: Bolt generic', $html);
                 $html = str_replace('%info%', '', $html);
                 $message = $errorblock;
             }
@@ -186,6 +199,8 @@ HTML;
 
             echo str_replace($app['resources']->getPath('rootpath'), '', $html);
         }
+
+        echo self::$screen;
     }
 
     /**
@@ -206,63 +221,12 @@ HTML;
      */
     private static function cleanHTML($output)
     {
-        $output = preg_replace('/<title>.*<\/title>/smi', "", $output);
-        $output = preg_replace('/<style>.*<\/style>/smi', "", $output);
+        $output = preg_replace('/<title>.*<\/title>/smi', '', $output);
+        $output = preg_replace('/<style>.*<\/style>/smi', '', $output);
         $output = strip_tags($output);
         $output = preg_replace('/(\n+)(\s+)/smi', "\n", $output);
+        $output = preg_replace('/&nbsp;/smi', ' ', $output);
 
         return $output;
-    }
-
-    /**
-     * Attempt to rebuild extension autoloader when a "Class not found" error
-     * occurs.
-     *
-     * @param \Bolt\Application $app
-     * @param array             $error
-     */
-    private static function attemptExtensionRecovery($app, $error)
-    {
-        $cwd = getcwd();
-        if ($error['type'] === E_ERROR && strpos($error['message'], 'Class') === 0) {
-            $path = $_SERVER['PATH_INFO'];
-            if (isset($_SERVER['QUERY_STRING'])) {
-                if (strpos($_SERVER['QUERY_STRING'], 'rebuild-autoloader') !== false) {
-                    header("location: $path?rebuild-done");
-                } elseif (strpos($_SERVER['QUERY_STRING'], 'rebuild-done') !== false) {
-                    chdir($cwd);
-                    return;
-                }
-            }
-
-            restore_error_handler();
-            $html = self::$html;
-            $html = str_replace('%error_title%', 'PHP Fatal Error: Bolt Extensions Class Loader', $html);
-
-            $message = '<b>Attempting to rebuild extension autoloader</b>';
-            $message .= "<p>Redirecting to <a href='$path?rebuild-autoloader'>$path</a> on completion.</p>";
-            $message .= "<script>window.setTimeout(function () { window.location='$path?rebuild-autoloader'; }, 5000);</script>";
-
-            $message = nl2br($message);
-            $html = str_replace('%error%', $message, $html);
-            $html = str_replace('%info%', '', $html);
-            if (php_sapi_name() == 'cli') {
-                $html = self::cleanHTML($html) . "\n\n";
-            }
-            echo $html;
-
-            $app['extend.enabled'] = false;
-            $app['extensions']->checkLocalAutoloader(true);
-            $html = '<div style="max-width: 640px; margin: auto;"><p class="status-ok">Completed rebuild… Attempting reload!</p>';
-            if (php_sapi_name() == 'cli') {
-                $html = self::cleanHTML($html) . "\n\n";
-            }
-            echo $html;
-
-            // Reboot the application and retry loading
-            chdir($cwd);
-            $app->boot();
-            $app->abort(Response::HTTP_MOVED_PERMANENTLY);
-        }
     }
 }

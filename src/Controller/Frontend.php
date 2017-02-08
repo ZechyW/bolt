@@ -2,9 +2,11 @@
 
 namespace Bolt\Controller;
 
+use Bolt\Asset\File\JavaScript;
+use Bolt\Asset\File\Stylesheet;
+use Bolt\Asset\Snippet\Snippet;
 use Bolt\Asset\Target;
 use Bolt\Helpers\Input;
-use Bolt\Pager;
 use Bolt\Response\BoltResponse;
 use Bolt\Translation\Translator as Trans;
 use Silex\ControllerCollection;
@@ -19,7 +21,7 @@ use utilphp\util;
  * This file acts as a grouping for the default front-end controllers.
  *
  * For overriding the default behavior here, please reference
- * http://docs.bolt.cm/templates-routes#routing or the routing.yml
+ * https://docs.bolt.cm/templating/templates-routes#routing or the routing.yml
  * file in your configuration.
  */
 class Frontend extends ConfigurableBase
@@ -49,12 +51,12 @@ class Frontend extends ConfigurableBase
         // Start the 'stopwatch' for the profiler.
         $this->app['stopwatch']->start('bolt.frontend.before');
 
-        // If there are no users in the users table, or the table doesn't exist. Repair
-        // the DB, and let's add a new user.
-        if (!$this->app['users']->getUsers()) {
-            $this->flashes()->info(Trans::__('There are no users in the database. Please create the first user.'));
+        // If there are no users in the users table, or the table doesn't exist.
+        // Repair the DB, and let's add a new user.
+        if (!$this->hasUsers()) {
+            $this->flashes()->info(Trans::__('general.phrase.users-none-create-first'));
 
-            return $this->redirectToRoute('useredit', ['id' => '']);
+            return $this->redirectToRoute('userfirst');
         }
 
         // If we are in maintenance mode and current user is not logged in, show maintenance notice.
@@ -63,17 +65,9 @@ class Frontend extends ConfigurableBase
                 $template = $this->templateChooser()->maintenance();
                 $response = $this->render($template);
                 $response->setStatusCode(Response::HTTP_SERVICE_UNAVAILABLE);
+
                 return $response;
             }
-        }
-
-        // If we have a valid cache respose, return it.
-        if ($response = $this->app['render']->fetchCachedRequest()) {
-            // Stop the 'stopwatch' for the profiler.
-            $this->app['stopwatch']->stop('bolt.frontend.before');
-
-            // Short-circuit the request, return the HTML/response. YOLO.
-            return $response;
         }
 
         // Stop the 'stopwatch' for the profiler.
@@ -83,26 +77,45 @@ class Frontend extends ConfigurableBase
     }
 
     /**
+     * {@inheritdoc}
+     */
+    public function after(Request $request, Response $response)
+    {
+        if ($this->session()->isStarted()) {
+            $response->setPrivate();
+        } else {
+            $sharedMaxAge = $this->getOption('general/caching/duration', 10) * 60;
+            $response
+                ->setPublic()
+                ->setSharedMaxAge($sharedMaxAge)
+            ;
+        }
+    }
+
+    /**
      * Controller for the "Homepage" route. Usually the front page of the website.
+     *
+     * @param Request $request
      *
      * @return BoltResponse
      */
-    public function homepage()
+    public function homepage(Request $request)
     {
-        $content = $this->getContent($this->getOption('general/homepage'));
+        $homepage = $this->getOption('theme/homepage') ?: $this->getOption('general/homepage');
+        $listingparameters = $this->getListingParameters($homepage);
+        $content = $this->getContent($homepage, $listingparameters);
 
         $template = $this->templateChooser()->homepage($content);
-
-        $globals = [
-            'records' => $content,
-        ];
+        $globals = [];
 
         if (is_array($content)) {
             $first = current($content);
             $globals[$first->contenttype['slug']] = $content;
+            $globals['records'] = $content;
         } elseif (!empty($content)) {
             $globals['record'] = $content;
             $globals[$content->contenttype['singular_slug']] = $content;
+            $globals['records'] = [$content->id => $content];
         }
 
         return $this->render($template, [], $globals);
@@ -124,6 +137,7 @@ class Frontend extends ConfigurableBase
         // If the contenttype is 'viewless', don't show the record page.
         if (isset($contenttype['viewless']) && $contenttype['viewless'] === true) {
             $this->abort(Response::HTTP_NOT_FOUND, "Page $contenttypeslug/$slug not found.");
+
             return null;
         }
 
@@ -145,21 +159,20 @@ class Frontend extends ConfigurableBase
         // No content, no page!
         if (!$content) {
             $this->abort(Response::HTTP_NOT_FOUND, "Page $contenttypeslug/$slug not found.");
+
             return null;
         }
 
         // Then, select which template to use, based on our 'cascading templates rules'
         $template = $this->templateChooser()->record($content);
 
-        $paths = $this->app['resources']->getPaths();
-
         // Setting the canonical URL.
-        if ($content->isHome() && ($template == $this->getOption('general/homepage_template'))) {
-            $this->app['resources']->setUrl('canonicalurl', $paths['rooturl']);
+        if ($content->isHome() && ($template === $this->getOption('general/homepage_template'))) {
+            $url = $this->app['resources']->getUrl('rooturl');
         } else {
-            $url = $paths['canonical'] . $content->link();
-            $this->app['resources']->setUrl('canonicalurl', $url);
+            $url = $this->app['resources']->getUrl('rooturl') . ltrim($content->link(), '/');
         }
+        $this->app['resources']->setUrl('canonicalurl', $url);
 
         // Setting the editlink
         $this->app['editlink'] = $this->generateUrl('editcontent', ['contenttypeslug' => $contenttype['slug'], 'id' => $content->id]);
@@ -169,7 +182,7 @@ class Frontend extends ConfigurableBase
         // So that they're also available in menu's and templates rendered by extensions.
         $globals = [
             'record'                      => $content,
-            $contenttype['singular_slug'] => $content
+            $contenttype['singular_slug'] => $content,
         ];
 
         return $this->render($template, [], $globals);
@@ -187,17 +200,30 @@ class Frontend extends ConfigurableBase
     {
         $contenttype = $this->getContentType($contenttypeslug);
 
-        // First, get the preview from Post.
-        $content = $this->app['storage']->getContentObject($contenttypeslug);
+        $id = $request->request->get('id');
+        if ($id) {
+            $content = $this->storage()->getContent($contenttype['slug'], ['id' => $id, 'returnsingle' => true, 'status' => '!undefined']);
+        } else {
+            $content = $this->storage()->getContentObject($contenttypeslug);
+        }
+
         $content->setFromPost($request->request->all(), $contenttype);
 
         $liveEditor = $request->get('_live-editor-preview');
         if (!empty($liveEditor)) {
-            $jsFile = $this->app['resources']->getUrl('app') . 'view/js/ckeditor/ckeditor.js';
-            $cssFile = $this->app['resources']->getUrl('app') . 'view/css/liveeditor.css';
-            $this->app['asset.queue.snippet']->add(Target::BEFORE_HEAD_JS, '<script>window.boltIsEditing = true;</script>');
-            $this->app['asset.queue.file']->add('javascript', $jsFile, ['late' => false, 'priority' => 1]);
-            $this->app['asset.queue.file']->add('stylesheet', $cssFile, ['late' => false, 'priority' => 5]);
+            $jsFile = (new JavaScript('js/ckeditor/ckeditor.js', 'bolt'))
+                ->setPriority(1)
+                ->setLate(false);
+            $cssFile = (new Stylesheet('css/liveeditor.css', 'bolt'))
+                ->setPriority(5)
+                ->setLate(false);
+            $snippet = (new Snippet())
+                ->setCallback('<script>window.boltIsEditing = true;</script>')
+                ->setLocation(Target::BEFORE_HEAD_JS);
+
+            $this->app['asset.queue.snippet']->add($snippet);
+            $this->app['asset.queue.file']->add($jsFile);
+            $this->app['asset.queue.file']->add($cssFile);
         }
 
         // Then, select which template to use, based on our 'cascading templates rules'
@@ -207,7 +233,7 @@ class Frontend extends ConfigurableBase
         // So that they're also available in menu's and templates rendered by extensions.
         $globals = [
             'record'                      => $content,
-            $contenttype['singular_slug'] => $content
+            $contenttype['singular_slug'] => $content,
         ];
         $response = $this->render($template, [], $globals);
 
@@ -236,29 +262,18 @@ class Frontend extends ConfigurableBase
      */
     public function listing(Request $request, $contenttypeslug)
     {
+        $listingparameters = $this->getListingParameters($contenttypeslug);
+        $content = $this->getContent($contenttypeslug, $listingparameters);
         $contenttype = $this->getContentType($contenttypeslug);
-
-        // If the contenttype is 'viewless', don't show the record page.
-        if (isset($contenttype['viewless']) && $contenttype['viewless'] === true) {
-            $this->abort(Response::HTTP_NOT_FOUND, "Page $contenttypeslug not found.");
-            return null;
-        }
-
-        $pagerid = Pager::makeParameterId($contenttypeslug);
-        // First, get some content
-        $page = $request->query->get($pagerid, $request->query->get('page', 1));
-        $amount = (!empty($contenttype['listing_records']) ? $contenttype['listing_records'] : $this->getOption('general/listing_records'));
-        $order = (!empty($contenttype['sort']) ? $contenttype['sort'] : $this->getOption('general/listing_sort'));
-        $content = $this->getContent($contenttype['slug'], ['limit' => $amount, 'order' => $order, 'page' => $page, 'paging' => true]);
 
         $template = $this->templateChooser()->listing($contenttype);
 
         // Make sure we can also access it as {{ pages }} for pages, etc. We set these in the global scope,
         // So that they're also available in menu's and templates rendered by extensions.
         $globals = [
-            'records'            => $content,
-            $contenttype['slug'] => $content,
-            'contenttype'        => $contenttype['name']
+            'records'        => $content,
+            $contenttypeslug => $content,
+            'contenttype'    => $contenttype['name'],
         ];
 
         return $this->render($template, [], $globals);
@@ -273,9 +288,9 @@ class Frontend extends ConfigurableBase
      *
      * @return BoltResponse|false
      */
-    public function taxonomy($request, $taxonomytype, $slug)
+    public function taxonomy(Request $request, $taxonomytype, $slug)
     {
-        $taxonomy = $this->app['storage']->getTaxonomyType($taxonomytype);
+        $taxonomy = $this->storage()->getTaxonomyType($taxonomytype);
         // No taxonomytype, no possible content.
         if (empty($taxonomy)) {
             return false;
@@ -284,24 +299,22 @@ class Frontend extends ConfigurableBase
         }
         // First, get some content
         $context = $taxonomy['singular_slug'] . '_' . $slug;
-        $pagerid = Pager::makeParameterId($context);
-         /* @var $query \Symfony\Component\HttpFoundation\ParameterBag */
-        $query = $request->query;
-        $page = $query->get($pagerid, $query->get('page', 1));
-        $amount = $this->getOption('general/listing_records');
-        $order = $this->getOption('general/listing_sort');
-        $content = $this->app['storage']->getContentByTaxonomy($taxonomytype, $slug, ['limit' => $amount, 'order' => $order, 'page' => $page]);
+        $page = $this->app['pager']->getCurrentPage($context);
+        // Theme value takes precedence over default config @see https://github.com/bolt/bolt/issues/3951
+        $amount = $this->getOption('theme/listing_records', false) ?: $this->getOption('general/listing_records');
 
-        // See https://github.com/bolt/bolt/pull/2310
-        if (
-                ($taxonomy['behaves_like'] === 'tags' && !$content) ||
-                (
-                    in_array($taxonomy['behaves_like'], ['categories', 'grouping']) &&
-                    !in_array($slug, isset($taxonomy['options']) ? array_keys($taxonomy['options']) : [])
-                )
-            ) {
+        // Handle case where listing records has been override for specific taxonomy
+        if (array_key_exists('listing_records', $taxonomy) && is_int($taxonomy['listing_records'])) {
+            $amount = $taxonomy['listing_records'];
+        }
+
+        $order = $this->getOption('theme/listing_sort', false) ?: $this->getOption('general/listing_sort');
+        $content = $this->storage()->getContentByTaxonomy($taxonomytype, $slug, ['limit' => $amount, 'order' => $order, 'page' => $page]);
+
+        if (!$this->isTaxonomyValid($content, $slug, $taxonomy)) {
             $this->abort(Response::HTTP_NOT_FOUND, "No slug '$slug' in taxonomy '$taxonomyslug'");
-            return null;
+
+            return;
         }
 
         $template = $this->templateChooser()->taxonomy($taxonomyslug);
@@ -324,10 +337,37 @@ class Frontend extends ConfigurableBase
             'records'      => $content,
             'slug'         => $name,
             'taxonomy'     => $this->getOption('taxonomy/' . $taxonomyslug),
-            'taxonomytype' => $taxonomyslug
+            'taxonomytype' => $taxonomyslug,
         ];
 
         return $this->render($template, [], $globals);
+    }
+
+    /**
+     * Check if the taxonomy is valid.
+     *
+     * @see https://github.com/bolt/bolt/pull/2310
+     *
+     * @param Content $content
+     * @param string  $slug
+     * @param array   $taxonomy
+     *
+     * @return boolean
+     */
+    protected function isTaxonomyValid($content, $slug, array $taxonomy)
+    {
+        if ($taxonomy['behaves_like'] === 'tags' && !$content) {
+            return false;
+        }
+
+        $isNotTag = in_array($taxonomy['behaves_like'], ['categories', 'grouping']);
+        $options = isset($taxonomy['options']) ? array_keys($taxonomy['options']) : [];
+        $isTax = in_array($slug, $options);
+        if ($isNotTag && !$isTax) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -350,10 +390,13 @@ class Frontend extends ConfigurableBase
         }
         $q = Input::cleanPostedData($q, false);
 
-        $param = Pager::makeParameterId($context);
-        $page = $request->query->get($param, $request->query->get('page', 1));
+        $page = $this->app['pager']->getCurrentPage($context);
 
-        $pageSize = $this->getOption('general/search_results_records') ?: ($this->getOption('general/listing_records') ?: 10);
+        // Theme value takes precedence over default config @see https://github.com/bolt/bolt/issues/3951
+        $pageSize = $this->getOption('theme/search_results_records', false);
+        if ($pageSize === false && !$pageSize = $this->getOption('general/search_results_records', false)) {
+            $pageSize = $this->getOption('theme/listing_records', false) ?: $this->getOption('general/listing_records', 10);
+        }
 
         $offset = ($page - 1) * $pageSize;
         $limit = $pageSize;
@@ -369,7 +412,7 @@ class Frontend extends ConfigurableBase
                     $contenttype = $this->getContentType($contenttypeslug);
                     if (is_array($contenttype)) {
                         $filters[$contenttypeslug] = [
-                            $field => $value
+                            $field => $value,
                         ];
                     }
                 }
@@ -379,24 +422,24 @@ class Frontend extends ConfigurableBase
             $filters = null;
         }
 
-        $result = $this->app['storage']->searchContent($q, $contenttypes, $filters, $limit, $offset);
+        $result = $this->storage()->searchContent($q, $contenttypes, $filters, $limit, $offset);
 
-        $pager = [
-            'for'          => $context,
-            'count'        => $result['no_of_results'],
-            'totalpages'   => ceil($result['no_of_results'] / $pageSize),
-            'current'      => $page,
-            'showing_from' => $offset + 1,
-            'showing_to'   => $offset + count($result['results']),
-            'link'         => $this->generateUrl('search', ['q' => $q]) . '&page_search='
-        ];
+        /** @var \Bolt\Pager\PagerManager $manager */
+        $manager = $this->app['pager'];
+        $manager
+            ->createPager($context)
+            ->setCount($result['no_of_results'])
+            ->setTotalpages(ceil($result['no_of_results'] / $pageSize))
+            ->setCurrent($page)
+            ->setShowingFrom($offset + 1)
+            ->setShowingTo($offset + count($result['results']));
 
-        $this->app['storage']->setPager($context, $pager);
+        $manager->setLink($this->generateUrl('search', ['q' => $q]) . '&page_search=');
 
         $globals = [
             'records'      => $result['results'],
-            $context       => $result['query']['use_q'],
-            'searchresult' => $result
+            $context       => $result['query']['sanitized_q'],
+            'searchresult' => $result,
         ];
 
         $template = $this->templateChooser()->search();
@@ -420,5 +463,67 @@ class Frontend extends ConfigurableBase
         }
 
         return $this->render($template);
+    }
+
+    /**
+     * Returns an array of the parameters used in getContent for listing pages.
+     *
+     * @param string  $contentTypeSlug The content type slug
+     *
+     * @return array Parameters to use in getContent
+     */
+    private function getListingParameters($contentTypeSlug)
+    {
+        $contentType = $this->getContentType(current(explode('/', $contentTypeSlug)));
+
+        // If there is no ContentType, don't get parameters for it
+        if ($contentType === false) {
+            return [];
+        }
+
+        // If the ContentType is 'viewless', don't show the listing / record page.
+        if ($contentType['viewless']) {
+            $this->abort(Response::HTTP_NOT_FOUND, 'Page ' . $contentType['slug'] . ' not found.');
+        }
+
+        // Build the pager
+        $page = $this->app['pager']->getCurrentPage($contentType['slug']);
+        $order = $contentType['sort'] ?: $this->getListingOrder($contentType);
+
+        // CT value takes precedence over theme & config.yml
+        if (!empty($contentType['listing_records'])) {
+            $amount = $contentType['listing_records'];
+        } else {
+            $amount = $this->getOption('theme/listing_records') ?: $this->getOption('general/listing_records');
+        }
+
+        return ['limit' => $amount, 'order' => $order, 'page' => $page, 'paging' => true];
+    }
+
+    /**
+     * Return the listing order.
+     *
+     * If the ContentType's sort is false (default in Config::parseContentType),
+     * either:
+     *  - we let `getContent()` sort by itself
+     *  - we explicitly set it to sort on the general/listing_sort setting
+     *
+     * @param array $contentType
+     *
+     * @return null|string
+     */
+    private function getListingOrder(array $contentType)
+    {
+        // An empty default isn't set in config yet, arrays got to hate them.
+        $contentType += ['taxonomy' => []];
+        $taxonomies = $this->getOption('taxonomy');
+        foreach ($contentType['taxonomy'] as $taxonomyName) {
+            if ($taxonomies[$taxonomyName]['has_sortorder']) {
+                // Let getContent() handle it
+                return null;
+            }
+        }
+
+        return $this->getOption('theme/listing_sort') ?: $this->getOption('general/listing_sort');
     }
 }

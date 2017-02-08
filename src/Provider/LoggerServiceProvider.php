@@ -2,12 +2,10 @@
 
 namespace Bolt\Provider;
 
-use Bolt\Logger\DeprecatedLog;
 use Bolt\Logger\FlashLogger;
 use Bolt\Logger\Handler\RecordChangeHandler;
 use Bolt\Logger\Handler\SystemHandler;
 use Bolt\Logger\Manager;
-use Bolt\Storage\Repository;
 use Monolog\Formatter\WildfireFormatter;
 use Monolog\Handler\FirePHPHandler;
 use Monolog\Handler\NullHandler;
@@ -25,19 +23,6 @@ class LoggerServiceProvider implements ServiceProviderInterface
 {
     public function register(Application $app)
     {
-        /**
-         * Wrapper for old log service, used by extensions.
-         *
-         * @deprecated To be removed for Bolt 3.0
-         */
-        $app['log'] = $app->share(
-            function ($app) {
-                $log = new DeprecatedLog($app);
-
-                return $log;
-            }
-        );
-
         // System log
         $app['logger.system'] = $app->share(
             function ($app) {
@@ -92,12 +77,30 @@ class LoggerServiceProvider implements ServiceProviderInterface
         );
 
         $app->register(
-                new MonologServiceProvider(),
-                [
-                    'monolog.name'    => 'bolt',
-                    'monolog.level'   => constant('Monolog\Logger::' . strtoupper($app['config']->get('general/debuglog/level'))),
-                    'monolog.logfile' => $app['resources']->getPath('cache') . '/' . $app['config']->get('general/debuglog/filename')
-                ]
+            new MonologServiceProvider(),
+            [
+                'monolog.name' => 'bolt',
+            ]
+        );
+
+        $app['monolog.level'] = function ($app) {
+            return Logger::toMonologLevel($app['config']->get('general/debuglog/level'));
+        };
+
+        $app['monolog.logfile'] = function ($app) {
+            return $app['resources']->getPath('cache') . '/' . $app['config']->get('general/debuglog/filename');
+        };
+
+        $app['monolog.handler'] = $app->extend(
+            'monolog.handler',
+            function ($handler, $app) {
+                // If we're not debugging, just send to /dev/null
+                if (!$app['config']->get('general/debuglog/enabled')) {
+                    return new NullHandler();
+                }
+
+                return $handler;
+            }
         );
 
         // If we're not debugging, just send to /dev/null

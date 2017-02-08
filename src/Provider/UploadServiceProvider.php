@@ -2,7 +2,8 @@
 
 namespace Bolt\Provider;
 
-use Bolt\Filesystem\FlysystemContainer;
+use Bolt\Filesystem\Filesystem;
+use Bolt\Filesystem\UploadContainer;
 use Silex\Application;
 use Silex\ServiceProviderInterface;
 use Sirius\Upload\Handler as UploadHandler;
@@ -20,11 +21,11 @@ class UploadServiceProvider implements ServiceProviderInterface
         // This exposes the main upload object as a service
         $app['upload'] = $app->share(
             function () use ($app) {
-                $allowedExensions = $app['config']->get('general/accept_file_types');
+                $allowedExtensions = $app['config']->get('general/accept_file_types');
                 $uploadHandler = new UploadHandler($app['upload.container']);
                 $uploadHandler->setPrefix($app['upload.prefix']);
                 $uploadHandler->setOverwrite($app['upload.overwrite']);
-                $uploadHandler->addRule('extension', ['allowed' => $allowedExensions]);
+                $uploadHandler->addRule('extension', ['allowed' => $allowedExtensions]);
 
                 $pattern = $app['config']->get('general/upload/pattern', '[^A-Za-z0-9\.]+');
                 $replacement = $app['config']->get('general/upload/replacement', '-');
@@ -49,11 +50,9 @@ class UploadServiceProvider implements ServiceProviderInterface
         // Any compatible file handler can be used.
         $app['upload.container'] = $app->share(
             function () use ($app) {
-                $base = $app['resources']->getPath($app['upload.namespace']);
-                if (!is_writable($base)) {
-                    throw new \RuntimeException("Unable to write to upload destination. Check permissions on $base", 1);
-                }
-                $container = new FlysystemContainer($app['filesystem']->getFilesystem($app['upload.namespace']));
+                /** @var Filesystem $filesystem */
+                $filesystem = $app['filesystem']->getFilesystem($app['upload.namespace']);
+                $container = new UploadContainer($filesystem);
 
                 return $container;
             }

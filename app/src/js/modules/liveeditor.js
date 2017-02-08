@@ -10,6 +10,7 @@
  * @param {Object|undefined} ckeditor - CKEDITOR global or undefined.
  */
 (function (bolt, $, window, ckeditor) {
+    'use strict';
 
     /**
      * Bolt.liveEditor mixin container.
@@ -19,13 +20,19 @@
      */
     var liveEditor = {};
 
-    var editcontent = bolt.editcontent;
-
     var editableTypes = [
         'text',
         'html',
         'textarea'
     ];
+
+    /**
+     * Removes events bound to live editor.
+     *
+     * @private
+     * @function removeEvents
+     */
+    var removeEvents = null;
 
     /**
      * Initializes the mixin.
@@ -36,14 +43,14 @@
      *
      * @param {BindData} data - Editcontent configuration data
      */
-    liveEditor.init = function(data) {
-        var editor = $('#live-editor-iframe');
+    liveEditor.init = function (data) {
         liveEditor.slug = data.singularSlug;
 
         if (Modernizr.contenteditable) {
             $('#sidebar-live-editor-button, #live-editor-button').bind('click', liveEditor.start);
 
             $('.close-live-editor').bind('click', liveEditor.stop);
+            $('.save-live-editor').bind('click', liveEditor.save);
         } else {
             // If we don't have the features we need
             // Don't let this get used
@@ -61,63 +68,70 @@
      * @static
      * @function start
      * @memberof Bolt.liveEditor
-     *
-     * @param {Event} event - Triggering event
      */
-    liveEditor.start = function(e) {
+    liveEditor.start = function () {
         // Validate form first
         var valid = bolt.validation.run($('#editcontent')[0]);
+
         if (!valid) {
             return;
         }
 
         // Add Events
-        var preventClick = function(e) {
+        var preventClick = function (e) {
             e.preventDefault();
         };
 
-        var iframeReady = function() {
-            var iframe = $('#live-editor-iframe')[0];
-            var win = iframe.contentWindow || iframe;
-            var doc = win.document;
-            var jq = $(doc);
+        var iframeReady = function () {
+            var iframe = $('#live-editor-iframe')[0],
+                win = iframe.contentWindow || iframe,
+                doc = win.document,
+                jq = $(doc);
+
             jq.on('click', 'a', preventClick);
-            var cke = bolt.ckeditor.initcke(win.CKEDITOR);
-            var editorConfig = cke.editorConfig;
-            cke.editorConfig = function(config) {
+
+            var cke = bolt.ckeditor.initcke(win.CKEDITOR),
+                editorConfig = cke.editorConfig;
+
+            cke.editorConfig = function (config) {
                 editorConfig.bind(this)(config);
 
                 // Remove the source code viewer
-                var ind;
-                _.each(config.toolbar, function(ob, i) {
-                    if (ob.name === 'tools') {
-                        ind = i;
+                for (var i in config.toolbar) {
+                    if (config.toolbar[i].name === 'tools') {
+                        var sourceIdx = config.toolbar[i].items.indexOf('Source');
+
+                        if (sourceIdx > -1) {
+                            delete config.toolbar[i].items[sourceIdx];
+                        }
                     }
-                });
-                config.toolbar[ind] = _.without(config.toolbar[ind], 'Source');
+                }
             };
 
-
-
             cke.disableAutoInline = false;
-            jq.find('[data-bolt-field]').each(function() {
+            jq.find('[data-bolt-field]').each(function () {
                 // Find form field
-                var field = $('#editcontent *[name=' + liveEditor.escapejQuery($(this).data('bolt-field')) + ']');
-                var fieldType = field.closest('[data-fieldtype]').data('fieldtype');
+                var field = $('#editcontent *[name=' + liveEditor.escapejQuery($(this).data('bolt-field')) + ']'),
+                    fieldType = field.closest('[data-bolt-fieldset]').data('bolt-fieldset');
 
                 $(this).addClass('bolt-editable');
 
-                if ((!$(this).data('no-edit')) && editableTypes.indexOf(fieldType) != -1) {
-
+                if (!$(this).data('no-edit') && editableTypes.indexOf(fieldType) !== -1) {
                     $(this).attr('contenteditable', true);
 
-                    if (fieldType == 'html') {
+                    if (fieldType === 'html') {
                         var editor = cke.inline(this, {
                             allowedContent: ''
                         });
+                        var saveData = bolt.utils.debounce(function () {
+                            editor.element.data('src', editor.getData());
+                        }, 500);
+                        editor.on('instanceReady', saveData);
+                        editor.on('change', saveData);
                     } else {
-                        $(this).on('paste', function(e) {
+                        $(this).on('paste', function (e) {
                             var content;
+
                             e.preventDefault();
                             if (e.originalEvent.clipboardData) {
                                 content = e.originalEvent.clipboardData.getData('text/plain');
@@ -130,17 +144,17 @@
                             }
                         });
 
-                        if(fieldType == 'textarea') {
+                        if (fieldType === 'textarea') {
                             $(this).on('keypress', function (e) {
-                                if(e.which == 13) {
+                                if (e.which === 13) {
                                     e.preventDefault();
                                     doc.execCommand('insertHTML', false, '<br><br>');
                                 }
                             });
                         } else {
                             $(this).on('keypress', function (e) {
-                                return e.which != 13;
-                            }).on('focus blur', function (e) {
+                                return e.which !== 13;
+                            }).on('focus blur', function () {
                                 $(this).html($(this).text());
                             });
                         }
@@ -161,10 +175,25 @@
         $('#editcontent').attr('action', '').attr('target', '_self');
         $('#editcontent *[name=_live-editor-preview]').val('');
 
-        liveEditor.removeEvents = function() {
+        removeEvents = function () {
             $('#live-editor-iframe').off('load', iframeReady);
             $('#navpage-primary .navbar-header a').off('click', preventClick);
         };
+    };
+
+    /**
+     * Saves within the live editor.
+     *
+     * @private
+     *
+     * @static
+     * @function save
+     * @memberof Bolt.liveEditor
+     */
+    liveEditor.save = function () {
+        liveEditor.extractText();
+
+        $('#savecontinuebutton').click();
     };
 
     /**
@@ -175,41 +204,50 @@
      * @static
      * @function stop
      * @memberof Bolt.liveEditor
-     *
-     * @param {Event} event - Triggering event
      */
-    liveEditor.stop = function (e) {
+    liveEditor.stop = function () {
         var iframe = $('#live-editor-iframe')[0];
-        var win = iframe.contentWindow || iframe;
-        var doc = win.document;
-        var jq = $(doc);
 
-        jq.find('[data-bolt-field]').each(function() {
-            // Find form field
-            var fieldName = $(this).data('bolt-field');
-            var field = $('#editcontent [name=' + liveEditor.escapejQuery(fieldName) + ']');
-            var fieldType = field.closest('[data-fieldtype]').data('fieldtype');
-            var fieldValue = '';
-
-            if (fieldType === 'html') {
-                fieldValue = $(this).html();
-
-                var fieldId = field.attr('id');
-                if (_.has(ckeditor.instances, fieldId)) {
-                    ckeditor.instances[fieldId].setData(fieldValue);
-                }
-            }else{
-                fieldValue = liveEditor.cleanText($(this), fieldType);
-            }
-            field.val(fieldValue);
-        });
+        liveEditor.extractText();
 
         $(iframe).attr('src', '');
 
         bolt.liveEditor.active = false;
         $('body').removeClass('live-editor-active');
 
-        liveEditor.removeEvents();
+        removeEvents();
+    };
+
+    /**
+     * Extract content from text fields
+     *
+     * @public
+     *
+     * @function extractText
+     * @memberof Bolt.liveEditor
+     */
+    liveEditor.extractText = function () {
+        var iframe = $('#live-editor-iframe')[0],
+            win = iframe.contentWindow || iframe,
+            doc = win.document,
+            jq = $(doc);
+
+        jq.find('[data-bolt-field]').each(function () {
+            // Find form field
+            var fieldName = $(this).data('bolt-field'),
+                field = $('#editcontent [name=' + liveEditor.escapejQuery(fieldName) + ']'),
+                fieldType = field.closest('[data-bolt-fieldset]').data('bolt-fieldset');
+
+            if (fieldType === 'html') {
+                var fieldId = field.attr('id');
+
+                if (ckeditor.instances.hasOwnProperty(fieldId)) {
+                    ckeditor.instances[fieldId].setData($(this).data('src'));
+                }
+            } else {
+                field.val(liveEditor.cleanText($(this), fieldType));
+            }
+        });
     };
 
     /**
@@ -224,9 +262,9 @@
      * @param {String} fieldType - type of field to clean (text, textarea)
      * @return {String} Value for editcontent input fields
      */
-    liveEditor.cleanText = function(element, fieldType) {
+    liveEditor.cleanText = function (element, fieldType) {
         // Preserve newlines and spacing for textarea fields
-        if(fieldType == 'textarea') {
+        if (fieldType === 'textarea') {
             element.html(element.html().replace(/&nbsp;/g, ' ').replace(/\s?<br.*?>\s?/g, '\n'));
         }
 
@@ -244,7 +282,7 @@
      *
      * @param {String} selector - Selector to escape
      */
-    liveEditor.escapejQuery = function(selector) {
+    liveEditor.escapejQuery = function (selector) {
         return selector.replace(/(:|\.|\[|\]|,)/g, "\\$1");
     };
 
@@ -263,14 +301,6 @@
      * @type {string}
      */
     liveEditor.slug = null;
-
-    /**
-     * Removes events bound to live editor
-     *
-     * @private
-     * @function removeEvents
-     */
-    liveEditor.removeEvents = null;
 
     bolt.liveEditor = liveEditor;
 })(Bolt || {}, jQuery, window, typeof CKEDITOR !== 'undefined' ? CKEDITOR : undefined);

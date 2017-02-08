@@ -1,14 +1,13 @@
 <?php
 namespace Bolt\Controller\Backend;
 
-use Bolt\Translation\Translator as Trans;
 use Silex\ControllerCollection;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Backend controller for database manipulation routes.
  *
- * Prior to v2.3 this functionality primarily existed in the monolithic
+ * Prior to v3.0 this functionality primarily existed in the monolithic
  * Bolt\Controllers\Backend class.
  *
  * @author Gawain Lynch <gawain.lynch@gmail.com>
@@ -32,19 +31,25 @@ class Database extends BackendBase
      *
      * Does not do actual repairs.
      *
+     * @param Request $request
+     *
      * @return \Bolt\Response\BoltResponse
      */
-    public function check()
+    public function check(Request $request)
     {
-        $response = $this->schemaManager()->checkTablesIntegrity(true);
+        /** @var $response \Bolt\Storage\Database\Schema\SchemaCheck */
+        $check = $this->app['schema']->check();
 
         $context = [
-            'modifications_made'     => null,
-            'modifications_required' => $response->getResponseStrings(),
-            'modifications_hints'    => $response->getHints(),
+            'changes' => null,
+            'check'   => $check,
+            'debug'   => $request->query->has('debug'),
+            'alters'  => $this->app['schema.comparator']->getAlters(),
+            'creates' => $this->app['schema.comparator']->getCreates(),
+            'diffs'   => $this->app['schema.comparator']->getDiffs(),
         ];
 
-        return $this->render('dbcheck/dbcheck.twig', $context);
+        return $this->render('@bolt/dbcheck/dbcheck.twig', $context);
     }
 
     /**
@@ -56,26 +61,10 @@ class Database extends BackendBase
      */
     public function update(Request $request)
     {
-        $output = $this->schemaManager()->repairTables()->getResponseStrings();
+        $output = $this->schemaManager()->update();
+        $this->session()->set('dbupdate_result', $output->getResponseStrings());
 
-        // If 'return=edit' is passed, we should return to the edit screen.
-        // We do redirect twice, yes, but that's because the newly saved
-        // contenttype.yml needs to be re-read.
-        $return = $request->get('return');
-        if ($return === 'edit') {
-            if (empty($output)) {
-                $content = Trans::__('Your database is already up to date.');
-            } else {
-                $content = Trans::__('Your database is now up to date.');
-            }
-            $this->flashes()->success($content);
-
-            return $this->redirectToRoute('fileedit', ['namespace' => 'config', 'file' => 'contenttypes.yml']);
-        } else {
-            $this->session()->set('dbupdate_result', $output);
-
-            return $this->redirectToRoute('dbupdate_result');
-        }
+        return $this->redirectToRoute('dbupdate_result');
     }
 
     /**
@@ -88,11 +77,15 @@ class Database extends BackendBase
         $output = $this->session()->get('dbupdate_result', []);
 
         $context = [
-            'modifications_made'     => $output,
-            'modifications_required' => null,
+            'changes' => $output,
+            'check'   => null,
+            'debug'   => false,
+            'alters'  => null,
+            'creates' => null,
+            'diffs'   => null,
         ];
 
-        return $this->render('dbcheck/dbcheck.twig', $context);
+        return $this->render('@bolt/dbcheck/dbcheck.twig', $context);
     }
 
     /**

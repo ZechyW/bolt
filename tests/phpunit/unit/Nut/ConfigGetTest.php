@@ -1,6 +1,8 @@
 <?php
 namespace Bolt\Tests\Nut;
 
+use Bolt\Filesystem\Adapter\Local;
+use Bolt\Filesystem\Filesystem;
 use Bolt\Nut\ConfigGet;
 use Bolt\Tests\BoltUnitTest;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -15,7 +17,8 @@ class ConfigGetTest extends BoltUnitTest
     public function testGet()
     {
         $app = $this->getApp();
-        $app['filesystem']->mount('config', PHPUNIT_ROOT . '/resources/');
+        $filesystem = new Filesystem(new Local(PHPUNIT_ROOT . '/resources/'));
+        $app['filesystem']->mountFilesystem('config', $filesystem);
 
         $command = new ConfigGet($app);
         $tester = new CommandTester($command);
@@ -31,6 +34,9 @@ class ConfigGetTest extends BoltUnitTest
     public function testDefaultFile()
     {
         $app = $this->getApp();
+        $filesystem = new Filesystem(new Local(PHPUNIT_ROOT . '/resources/'));
+        $app['filesystem']->mountFilesystem('config', $filesystem);
+
         $command = new ConfigGet($app);
         $tester = new CommandTester($command);
         $app['resources']->setPath('config', PHPUNIT_ROOT . '/resources');

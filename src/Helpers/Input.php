@@ -22,16 +22,11 @@ class Input
             }
         } elseif (is_string($var)) {
             // expand tabs
-            $var = str_replace("\t", "    ", $var);
+            $var = str_replace("\t", '    ', $var);
 
             // prune control characters
             if ($stripControlChars) {
                 $var = preg_replace('/[[:cntrl:][:space:]]/', ' ', $var);
-            }
-
-            // Ah, the joys of \"magic quotes\"!
-            if ($stripslashes && get_magic_quotes_gpc()) {
-                $var = stripslashes($var);
             }
         }
 

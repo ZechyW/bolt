@@ -1,6 +1,7 @@
 <?php
 namespace Bolt\Tests\Users;
 
+use Bolt\Events\AccessControlEvent;
 use Bolt\Tests\BoltUnitTest;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -29,38 +30,36 @@ class AuthenticationTest extends BoltUnitTest
         $this->user = ['id' => 2, 'username' => 'editor', 'email' => 'editor@example.com'];
     }
 
-    /**
-     * @covers Bolt\Users::login
-     */
     public function testLoginWithUsername()
     {
         // Setup test
         $app = $this->getApp();
-        $users = $this->getLoginMock($app);
+        $loginMock = $this->getLoginMock($app);
 
-        $users->expects($this->once())->method('login')->willReturn(true);
+        $loginMock->expects($this->once())->method('login')->willReturn(true);
 
         // Run test
         $request = new Request();
-        $result = $users->login($request, 'anotheruser', 'test123');
+        $event = new AccessControlEvent($request);
+        /** @var \Bolt\AccessControl\Login $loginMock */
+        $result = $loginMock->login('anotheruser', 'test123', $event);
 
         // Check result
         $this->assertEquals(true, $result);
     }
 
-    /**
-     * @covers Bolt\Users::login
-     */
     public function testLoginWithEmail()
     {
         // Setup test
         $app = $this->getApp();
-        $users = $this->getLoginMock($app);
-        $users->expects($this->once())->method('login')->willReturn(true);
+        $loginMock = $this->getLoginMock($app);
+        $loginMock->expects($this->once())->method('login')->willReturn(true);
 
         // Run test
         $request = new Request();
-        $result = $users->login($request, 'test@example.com', 'test123');
+        $event = new AccessControlEvent($request);
+        /** @var \Bolt\AccessControl\Login $loginMock */
+        $result = $loginMock->login('test@example.com', 'test123', $event);
 
         // Check result
         $this->assertEquals(true, $result);

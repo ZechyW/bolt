@@ -2,7 +2,6 @@
 namespace Bolt\Tests\Controller\Backend;
 
 use Bolt\Tests\Controller\ControllerUnitTest;
-use Silex\Application;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -24,11 +23,13 @@ class UploadTest extends ControllerUnitTest
 
     public function tearDown()
     {
-        @unlink(TEST_ROOT . '/app/cache/config_cache.php');
+        @unlink(TEST_ROOT . '/app/cache/config-cache.json');
+        $this->getService('filesystem')->getDir('files://')->setVisibility('public');
     }
 
     public function testResponses()
     {
+        $this->getApp()->flush();
         $this->setRequest(Request::create(
             '/upload/files',
             'POST',
@@ -38,7 +39,7 @@ class UploadTest extends ControllerUnitTest
             []
         ));
 
-        $response = $this->controller()->uploadNamspace($this->getRequest(), 'files');
+        $response = $this->controller()->uploadNamespace($this->getRequest(), 'files');
         $this->assertEquals(Response::HTTP_OK, $response->getStatusCode());
 
         // We haven't posted a file so an empty resultset should be returned
@@ -48,8 +49,9 @@ class UploadTest extends ControllerUnitTest
 
     public function testUpload()
     {
+        $this->getApp()->flush();
         $request = $this->getFileRequest();
-        $response = $this->controller()->uploadNamspace($request, 'files');
+        $response = $this->controller()->uploadNamespace($request, 'files');
         $this->assertEquals(Response::HTTP_OK, $response->getStatusCode());
 
         $content = json_decode($response->getContent());
@@ -58,6 +60,7 @@ class UploadTest extends ControllerUnitTest
 
     public function testInvalidFiletype()
     {
+        $this->getApp()->flush();
         $this->setRequest(Request::create(
             '/upload/files',
             'POST',
@@ -67,14 +70,14 @@ class UploadTest extends ControllerUnitTest
                 'files' => [
                     [
                         'tmp_name' => PHPUNIT_ROOT . '/resources/generic-logo-evil.exe',
-                        'name'     => 'logo.exe'
-                    ]
-                ]
+                        'name'     => 'logo.exe',
+                    ],
+                ],
             ],
             []
         ));
 
-        $response = $this->controller()->uploadNamspace($this->getRequest(), 'files');
+        $response = $this->controller()->uploadNamespace($this->getRequest(), 'files');
         $this->assertEquals(Response::HTTP_OK, $response->getStatusCode());
 
         $content = json_decode($response->getContent());
@@ -83,18 +86,9 @@ class UploadTest extends ControllerUnitTest
         $this->assertRegExp('/extension/i', $file->error);
     }
 
-    public function testBadDefaultLocation()
-    {
-        $this->getService('resources')->setPath('files', '/path/to/nowhere');
-        $this->getFileRequest();
-
-        $this->setExpectedException('RuntimeException', 'Unable to write to upload destination');
-
-        $this->controller()->uploadNamspace($this->getRequest(), 'files');
-    }
-
     public function testHandlerParsing()
     {
+        $this->getApp()->flush();
         $this->setRequest(Request::create(
             '/upload/files',
             'POST',
@@ -104,19 +98,20 @@ class UploadTest extends ControllerUnitTest
                 'files' => [
                     [
                         'tmp_name' => PHPUNIT_ROOT . '/resources/generic-logo.png',
-                        'name'     => 'logo.png'
-                    ]
-                ]
+                        'name'     => 'logo.png',
+                    ],
+                ],
             ],
             []
         ));
 
-        $response = $this->controller()->uploadNamspace($this->getRequest(), 'files');
+        $response = $this->controller()->uploadNamespace($this->getRequest(), 'files');
         $this->assertEquals(Response::HTTP_OK, $response->getStatusCode());
     }
 
     public function testMultipleHandlerParsing()
     {
+        $this->getApp()->flush();
         $this->setRequest(Request::create(
             '/upload/files',
             'POST',
@@ -126,31 +121,32 @@ class UploadTest extends ControllerUnitTest
                 'files' => [
                     [
                         'tmp_name' => __DIR__ . '/resources/generic-logo.png',
-                        'name'     => 'logo.png'
-                    ]
-                ]
+                        'name'     => 'logo.png',
+                    ],
+                ],
             ],
             []
         ));
 
         // Not properly implemented as yet, this will need to be revisited on implementation
-        $this->setExpectedException('League\Flysystem\FileNotFoundException', 'File not found at path: logo.png');
-        $this->controller()->uploadNamspace($this->getRequest(), 'files');
+        $this->setExpectedException('Bolt\Filesystem\Exception\FileNotFoundException', 'File not found at path: logo.png');
+        $this->controller()->uploadNamespace($this->getRequest(), 'files');
     }
 
     public function testFileObjectUploads()
     {
+        $this->getApp()->flush();
         $this->setRequest(Request::create(
             '/upload/files',
             'POST',
             [],
             [],
             [
-                'files' => [new UploadedFile(PHPUNIT_ROOT . '/resources/generic-logo.png', 'logo.png')]
+                'files' => [new UploadedFile(PHPUNIT_ROOT . '/resources/generic-logo.png', 'logo.png')],
             ],
             []
         ));
-        $response = $this->controller()->uploadNamspace($this->getRequest(), 'files');
+        $response = $this->controller()->uploadNamespace($this->getRequest(), 'files');
 
         $this->assertEquals(Response::HTTP_OK, $response->getStatusCode());
     }
@@ -166,9 +162,9 @@ class UploadTest extends ControllerUnitTest
                 'files' => [
                     [
                         'tmp_name' => PHPUNIT_ROOT . '/resources/generic-logo.png',
-                        'name'     => 'logo.png'
-                    ]
-                ]
+                        'name'     => 'logo.png',
+                    ],
+                ],
             ],
             []
         ));
@@ -176,7 +172,7 @@ class UploadTest extends ControllerUnitTest
         return $this->getRequest();
     }
 
-//     protected function getApp()
+//     protected function getApp($boot = true)
 //     {
 //         $bolt = parent::getApp();
 

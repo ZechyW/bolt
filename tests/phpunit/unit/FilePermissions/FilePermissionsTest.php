@@ -14,22 +14,23 @@ class FilePermissionsTest extends BoltUnitTest
     public function testBasicAuth()
     {
         $app = $this->getApp();
-        $fp = new FilePermissions($app);
+        $fp = new FilePermissions($app['config']);
         $this->assertTrue($fp->authorized('config', 'test.yml'));
+        $this->assertFalse($fp->authorized('cache', ''));
         $this->assertFalse($fp->authorized('something', '/path/to/.htaccess'));
     }
 
     public function testAllowedUpload()
     {
         $app = $this->getApp();
-        $fp = new FilePermissions($app);
-        $hiddenFile = ".bashrc";
+        $fp = new FilePermissions($app['config']);
+        $hiddenFile = '.bashrc';
         $this->assertFalse($fp->allowedUpload($hiddenFile));
 
-        $badExtension = "evil.exe";
+        $badExtension = 'evil.exe';
         $this->assertFalse($fp->allowedUpload($badExtension));
 
-        $okFile = "mycoolimage.jpg";
+        $okFile = 'mycoolimage.jpg';
         $this->assertTrue($fp->allowedUpload($okFile));
     }
 }

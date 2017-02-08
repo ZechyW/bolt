@@ -1,13 +1,13 @@
 {# Page: NavSecondary > Content ... > Edit ^ View related content #}
 
-{% from '_sub/_editable_record_list.twig' import editable_record_list as list %}
-{% import '_macro/_panels.twig' as panels %}
+{% from '@bolt/_sub/_record_list.twig' import record_list as list %}
+{% import '@bolt/_macro/_panels.twig' as panels %}
 
-{% extends '_base/_page-nav.twig' %}
+{% extends '@bolt/_base/_page-nav.twig' %}
 
 {% block page_nav 'Content/*' %}
 
-{% block page_title __('Related content') %}
+{% block page_title __('general.phrase.related-content') %}
 
 {% block page_subtitle context.name ~ ' › ' ~ context.title %}
 
@@ -19,7 +19,7 @@
             <h1 class="page-header">
                 {% if pager is defined and pager.totalpages > 1 %}
                     <span>
-                    {{ __('Showing') }} {{ pager.showing_from }} - {{ pager.showing_to }} {{ __('of') }} {{ pager.count }}
+                    {{ __('general.phrase.showing') }} {{ pager.showing_from }} - {{ pager.showing_to }} {{ __('general.phrase.of') }} {{ pager.count }}
                     </span>
                 {% endif %}
             </h1>
@@ -31,13 +31,13 @@
         <div class="col-xs-12">
         {% if context.show_contenttype %}
             <div class="col-md-9">
-                {% include 'relatedto/_toolbar.twig' %}
+                {{ include('@bolt/relatedto/_toolbar.twig') }}
                 {# TODO: add order #}
-                {{ list(context.show_contenttype, context.related_content, '') }}
+                {{ list(context.show_contenttype, context.related_content, context.permissions, '') }}
             </div>
 
             <aside class="col-md-3">
-                {% include 'relatedto/_panel-actions_relatedto.twig' %}
+                {{ include('@bolt/relatedto/_panel-actions_relatedto.twig') }}
                 {{ panels.lastmodified(context.show_contenttype.slug) }}
                 {{ panels.stack(5) }}
             </aside>
@@ -45,7 +45,7 @@
         {% else %}
 
             <div class="col-xs-12">
-                {{ __('No relations found!') }}
+                {{ __('general.phrase.no-relations-found-bang') }}
             </div>
 
         {% endif %}

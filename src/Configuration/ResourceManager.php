@@ -1,10 +1,13 @@
 <?php
+
 namespace Bolt\Configuration;
 
-use Bolt\Application;
+use Bolt\Configuration\Validation\ValidatorInterface;
+use Bolt\Pager\PagerManager;
 use Composer\Autoload\ClassLoader;
 use Eloquent\Pathogen\AbsolutePathInterface;
 use Eloquent\Pathogen\RelativePathInterface;
+use Silex\Application;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -13,20 +16,22 @@ use Symfony\Component\HttpFoundation\Request;
  *
  * Intended to simplify the ability to override resource location
  *
+ * @deprecated Deprecated since 3.0, to be removed in 4.0.
+ *
  * @author Ross Riley, riley.ross@gmail.com
  */
 class ResourceManager
 {
-    /** @var \Bolt\Application */
+    /** @var \Silex\Application */
     public $app;
 
     /** @var string */
     public $urlPrefix = '';
 
     /**
-     * @var \Bolt\Application
+     * @var \Silex\Application
      *
-     * @deprecated Don't use! Will probably refactored out soon
+     * @deprecated Deprecated since 3.0, to be removed in 4.0.
      */
     public static $theApp;
 
@@ -46,6 +51,12 @@ class ResourceManager
     protected $classLoader;
     /** @var \Eloquent\Pathogen\FileSystem\Factory\FileSystemPathFactory */
     protected $pathManager;
+
+    /**
+     * @deprecated since 3.0, to be removed in 4.0.
+     * @var PathsProxy
+     */
+    private $pathsProxy;
 
     /**
      * Constructor initialises on the app root path.
@@ -87,6 +98,7 @@ class ResourceManager
         $this->setUrl('upload', '/upload/');
         $this->setUrl('bolt', '/bolt/');
         $this->setUrl('theme', '/theme/');
+        $this->setUrl('themes', '/theme/'); // Needed for filebrowser. See #5759
 
         $this->setPath('web', '');
         $this->setPath('cache', 'app/cache');
@@ -94,6 +106,8 @@ class ResourceManager
         $this->setPath('src', dirname(__DIR__));
         $this->setPath('database', 'app/database');
         $this->setPath('themebase', 'theme');
+        $this->setPath('view', 'app/view');
+        $this->setUrl('view', '/app/view/');
     }
 
     /**
@@ -112,14 +126,16 @@ class ResourceManager
     }
 
     /**
-     * @deprecated Don't use! Will probably refactored out soon
+     * Don't use!
+     *
+     * @deprecated Deprecated since 3.0, to be removed in 4.0.
      *
      * @param Application $app
      */
     public function setApp(Application $app)
     {
         $this->app = $app;
-        ResourceManager::$theApp = $app;
+        self::$theApp = $app;
     }
 
     /**
@@ -137,6 +153,8 @@ class ResourceManager
         if ($path instanceof RelativePathInterface) {
             $path = $path->resolveAgainst($this->paths['root']);
         }
+
+        $path = $path->normalize();
 
         $this->paths[$name] = $path;
         if (strpos($name, 'path') === false) {
@@ -183,6 +201,8 @@ class ResourceManager
      */
     public function getPathObject($name)
     {
+        $name = str_replace('\\', '/', $name);
+
         $parts = [];
         if (strpos($name, '/') !== false) {
             $parts = explode('/', $name);
@@ -213,19 +233,12 @@ class ResourceManager
      */
     public function hasPath($name)
     {
-        $parts = [];
         if (strpos($name, '/') !== false) {
             $parts = explode('/', $name);
             $name = array_shift($parts);
         }
 
-        if (array_key_exists($name . 'path', $this->paths)) {
-            return true;
-        } elseif (array_key_exists($name, $this->paths)) {
-            return true;
-        } else {
-            return false;
-        }
+        return array_key_exists($name, $this->paths) || array_key_exists($name . 'path', $this->paths);
     }
 
     /**
@@ -243,12 +256,13 @@ class ResourceManager
      * Get a URL path definition.
      *
      * @param string $name
+     * @param bool   $includeBasePath
      *
      * @throws \InvalidArgumentException
      *
      * @return string
      */
-    public function getUrl($name)
+    public function getUrl($name, $includeBasePath = true)
     {
         if (array_key_exists($name . 'url', $this->urls) && $name !== 'root') {
             return $this->urls[$name . 'url'];
@@ -257,7 +271,13 @@ class ResourceManager
             throw new \InvalidArgumentException("Requested url $name is not available", 1);
         }
 
-        return $this->urlPrefix . $this->urls[$name];
+        $url = $this->urls[$name];
+
+        if (!$includeBasePath || strpos($url, 'http') === 0 || strpos($url, '//') === 0) {
+            return $url;
+        }
+
+        return $this->urlPrefix . $url;
     }
 
     /**
@@ -291,30 +311,27 @@ class ResourceManager
     }
 
     /**
-     * Returns merged array of Urls, Paths and current request.
+     * Just don't use this.
      *
-     * However $this->paths can be either mixed array elements of String or Path
-     * getPaths() will convert them string to provide homogeneous type result.
+     * @deprecated since 3.0, to be removed in 4.0.
      *
-     * @return string[] array of merged strings
+     * @return PathsProxy
      */
     public function getPaths()
     {
-        $paths = array_map(
-            function ($item) {
-                return (string) $item;
-            },
-            $this->paths
-        );
+        if ($this->pathsProxy === null) {
+            $this->pathsProxy = new PathsProxy($this);
+        }
 
-        return array_merge($paths, $this->urls, $this->request);
+        return $this->pathsProxy;
     }
 
     /**
      * Takes a Request object and uses it to initialize settings that depend on
      * the request.
      *
-     * @param Request $request
+     * @param Application $app
+     * @param Request     $request
      */
     public function initializeRequest(Application $app, Request $request = null)
     {
@@ -325,51 +342,49 @@ class ResourceManager
         // This is where we set the canonical. Note: The protocol (scheme) defaults to 'http',
         // and the path is discarded, as it makes no sense in this context: Bolt always
         // determines the path for a page / record. This is not the canonical's job.
-        $canonical = $app['config']->get('general/canonical', '');
-        if ($canonical !== '' && strpos($canonical, 'http') !== 0) {
+        $canonical = $app['config']->get('general/canonical', $request->server->get('HTTP_HOST'));
+        if (strpos($canonical, 'http') !== 0) {
             $canonical = 'http://' . $canonical;
         }
+
         $canonical = parse_url($canonical);
-        if (empty($canonical['scheme'])) {
-            $canonical['scheme'] = 'http';
-        }
+
         if (empty($canonical['host'])) {
             $canonical['host'] = $request->server->get('HTTP_HOST');
         }
-        $this->setRequest('canonical', sprintf('%s://%s', $canonical['scheme'], $canonical['host']));
 
-        // Set the current protocol. Default to http, unless otherwise.
-        $protocol = 'http';
+        if (empty($canonical['scheme'])) {
+            $canonical['scheme'] = 'http';
+        }
 
         if (($request->server->get('HTTPS') == 'on') ||
             ($request->server->get('SERVER_PROTOCOL') == 'https') ||
             ($request->server->get('HTTP_X_FORWARDED_PROTO') == 'https') ||
             ($request->server->get('HTTP_X_FORWARDED_SSL') == 'on')) {
-            $protocol = 'https';
-        } elseif ($request->server->get('SERVER_PROTOCOL') === null) {
-            $protocol = 'cli';
+            $canonical['scheme'] = 'https';
         }
+
+        $this->setRequest('canonical', sprintf('%s://%s', $canonical['scheme'], $canonical['host']));
 
         $rootUrl = rtrim($this->getUrl('root'), '/');
         if ($rootUrl !== $request->getBasePath()) {
-            $rootUrl = $request->getBasePath();
-            $this->setUrl('root', $rootUrl . $this->getUrl('root'));
-            $this->setUrl('app', $rootUrl . $this->getUrl('app'));
-            $this->setUrl('extensions', $rootUrl . $this->getUrl('extensions'));
-            $this->setUrl('files', $rootUrl . $this->getUrl('files'));
-            $this->setUrl('async', $rootUrl . $this->getUrl('async'));
-            $this->setUrl('upload', $rootUrl . $this->getUrl('upload'));
+            $this->urlPrefix = $request->getBasePath();
         }
 
-        $this->setRequest('protocol', $protocol);
+        $this->setRequest('protocol', $canonical['scheme']);
         $hostname = $request->server->get('HTTP_HOST', 'localhost');
         $this->setRequest('hostname', $hostname);
         $current = $request->getBasePath() . $request->getPathInfo();
         $this->setUrl('current', $current);
-        $this->setUrl('canonicalurl', sprintf('%s%s', $this->getRequest('canonical'), $current));
-        $this->setUrl('currenturl', sprintf('%s://%s%s', $protocol, $hostname, $current));
-        $this->setUrl('hosturl', sprintf('%s://%s', $protocol, $hostname));
+        $this->setUrl('currenturl', sprintf('%s://%s%s', $canonical['scheme'], $hostname, $current));
+        $this->setUrl('hosturl', sprintf('%s://%s', $canonical['scheme'], $hostname));
         $this->setUrl('rooturl', sprintf('%s%s/', $this->getRequest('canonical'), $rootUrl));
+
+        $url = sprintf('%s%s', $this->getRequest('canonical'), $current);
+        if (PagerManager::isPagingRequest($request)) {
+            $url .= '?' . http_build_query($request->query->all());
+        }
+        $this->setUrl('canonicalurl', $url);
     }
 
     /**
@@ -401,29 +416,9 @@ class ResourceManager
             $this->setPath('templatespath', $this->getPath('theme'));
         }
 
-        $branding = ltrim($this->app['config']->get('general/branding/path') . '/', '/');
-        $this->setUrl('bolt', $this->getUrl('root') . $branding);
+        $branding = '/' . trim($this->app['config']->get('general/branding/path'), '/') . '/';
+        $this->setUrl('bolt', $branding);
         $this->app['config']->setCkPath();
-        $this->verifyDb();
-    }
-
-    public function compat()
-    {
-        if (! defined('BOLT_COMPOSER_INSTALLED')) {
-            define('BOLT_COMPOSER_INSTALLED', false);
-        }
-        if (! defined('BOLT_PROJECT_ROOT_DIR')) {
-            define('BOLT_PROJECT_ROOT_DIR', $this->getPath('root'));
-        }
-        if (! defined('BOLT_WEB_DIR')) {
-            define('BOLT_WEB_DIR', $this->getPath('web'));
-        }
-        if (! defined('BOLT_CACHE_DIR')) {
-            define('BOLT_CACHE_DIR', $this->getPath('cache'));
-        }
-        if (! defined('BOLT_CONFIG_DIR')) {
-            define('BOLT_CONFIG_DIR', $this->getPath('config'));
-        }
     }
 
     /**
@@ -437,7 +432,7 @@ class ResourceManager
     {
         $themeDir = isset($generalConfig['theme']) ? '/' . $generalConfig['theme'] : '';
         $themePath = isset($generalConfig['theme_path']) ? $generalConfig['theme_path'] : '/theme';
-        $themeUrl = isset($generalConfig['theme_path']) ? $generalConfig['theme_path'] : $this->getUrl('root') . 'theme';
+        $themeUrl = isset($generalConfig['theme_path']) ? $generalConfig['theme_path'] : '/theme';
 
         // See if the user has set a theme path otherwise use the default
         if (!isset($generalConfig['theme_path'])) {
@@ -450,30 +445,29 @@ class ResourceManager
     }
 
     /**
-     * Verifies the configuration to ensure that paths exist and are writable.
+     * @deprecated Deprecated since 3.1, to be removed in 4.0.
      */
     public function verify()
     {
-        $this->getVerifier()->doChecks();
     }
 
     /**
-     * Verify the database folder.
+     * @deprecated Deprecated since 3.1, to be removed in 4.0.
      */
     public function verifyDb()
     {
-        $this->getVerifier()->doDatabaseCheck();
     }
 
     /**
      * Get the LowlevelChecks object.
      *
-     * @return LowlevelChecks
+     * @return ValidatorInterface
      */
     public function getVerifier()
     {
         if (! $this->verifier) {
-            $this->verifier = new LowlevelChecks($this);
+            $verifier = new LowlevelChecks($this);
+            $this->verifier = $verifier;
         }
 
         return $this->verifier;
@@ -482,7 +476,7 @@ class ResourceManager
     /**
      * Set the LowlevelChecks object.
      *
-     * @param \Bolt\Configuration\LowlevelChecks|null $verifier
+     * @param ValidatorInterface|null $verifier
      */
     public function setVerifier($verifier)
     {
@@ -504,7 +498,7 @@ class ResourceManager
      *
      * @throws \RuntimeException
      *
-     * @return \Bolt\Application
+     * @return \Silex\Application
      */
     public static function getApp()
     {

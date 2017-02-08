@@ -63,11 +63,20 @@ class FlashLogger implements FlashLoggerInterface, FlashBagAttachableInterface
     /**
      * {@inheritdoc}
      */
+    public function configuration($message)
+    {
+        $this->add(self::CONFIGURATION, $message);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function has($type)
     {
         if ($this->flashBag) {
             return $this->flashBag->has($type);
         }
+
         return array_key_exists($type, $this->flashes) && $this->flashes[$type];
     }
 
@@ -98,6 +107,7 @@ class FlashLogger implements FlashLoggerInterface, FlashBagAttachableInterface
     {
         if ($this->flashBag) {
             $this->flashBag->clear();
+
             return;
         }
         $this->flashes = [];
@@ -113,9 +123,22 @@ class FlashLogger implements FlashLoggerInterface, FlashBagAttachableInterface
     {
         if ($this->flashBag) {
             $this->flashBag->add($type, $message);
+
             return;
         }
         $this->flashes[$type][] = $message;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function keys()
+    {
+        if ($this->flashBag) {
+            return $this->flashBag->keys();
+        }
+
+        return array_keys($this->flashes);
     }
 
     /**
@@ -132,7 +155,7 @@ class FlashLogger implements FlashLoggerInterface, FlashBagAttachableInterface
         // and we shouldn't wipe them.
         foreach ($this->flashes as $type => $messages) {
             foreach ($messages as $message) {
-                $flashBag->add($type, $message);
+                $flashBag->add($type, (string) $message);
             }
             unset($this->flashes[$type]);
         }
@@ -145,6 +168,6 @@ class FlashLogger implements FlashLoggerInterface, FlashBagAttachableInterface
      */
     public function isFlashBagAttached()
     {
-        return (bool)$this->flashBag;
+        return (bool) $this->flashBag;
     }
 }

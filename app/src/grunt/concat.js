@@ -1,10 +1,10 @@
-/* global module */
-
 /*
  * CONCAT: Concatenate files
  */
 module.exports = function (grunt, option) {
-    var extractUrls = function(css) {
+    'use strict';
+
+    var extractUrls = function (css) {
         var reUrls = /url\((['"]?)(.+?)\1\)/g,
             urls = [],
             url;
@@ -21,9 +21,9 @@ module.exports = function (grunt, option) {
         return urls;
     };
 
-    var processLibCss = function(css, filepath) {
+    var processLibCss = function (css, filepath) {
         var path = require('path'),
-            reDir = /(jquery[-.]\w+|select2)/,
+            reDir = /(jquery[-.]\w+)/,
             urls = [],
             img = {},
             relativePath;
@@ -43,21 +43,28 @@ module.exports = function (grunt, option) {
             img.dir = (img.dir = reDir.exec(filepath)) ? img.dir[1].replace(/^jquery\./, 'jquery-') + '/' : '';
 
             for (var i in urls) {
-                // Set up paths.
-                img.src = path.dirname(filepath) + '/' + urls[i].path;
-                img.dst = option.path.dest.img + '/lib/' + img.dir + path.basename(urls[i].path);
-                img.url = relativePath + '/lib/' + img.dir + path.basename(urls[i].path);
+                if (urls.hasOwnProperty(i)) {
+                    // Set up paths.
+                    img.src = path.dirname(filepath) + '/' + urls[i].path;
+                    img.dst = option.path.dest.img + '/lib/' + img.dir + path.basename(urls[i].path);
+                    img.url = relativePath + '/lib/' + img.dir + path.basename(urls[i].path);
 
-                // Copy the image file.
-                grunt.verbose.writeln('Copy: ' + img.src + '\n   => ' + img.dst);
-                grunt.file.copy(img.src, img.dst);
+                    // Copy the image file.
+                    grunt.verbose.writeln('Copy: ' + img.src + '\n   => ' + img.dst);
+                    grunt.file.copy(img.src, img.dst);
 
-                // Replace url() paths in css.
-                css = css.replace(
-                    new RegExp(urls[i].match.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), 'g'),
-                    'url(' + img.url + ')'
-                );
+                    // Replace url() paths in css.
+                    css = css.replace(
+                        new RegExp(urls[i].match.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), 'g'),
+                        'url(' + img.url + ')'
+                    );
+                }
             }
+        }
+
+        // Hack to prevent postcss/autoprefixer bug from triggering.
+        if (filepath.match(/select2\.css$/)) {
+            css = css.replace(/(background-image: -webkit-linear-gradient\(top, .+?\);)/g, '/* $1 */');
         }
 
         return '/* Source: ' + filepath + '*/\n\n' + css;
@@ -75,23 +82,25 @@ module.exports = function (grunt, option) {
             },
             nonull: true,
             src: [
-                '<%= path.tmp %>/jquery.min.js',                                //  95 kb
+                '<%= path.tmp %>/jquery.min.js',                                //  83 kb
                 '<%= path.tmp %>/jquery.cookie.min.js',                         //   2 kb
                 '<%= path.tmp %>/jquery.formatDateTime.min.js',                 //   3 kb
                 '<%= path.tmp %>/jquery.tagcloud.min.js',                       //   2 kb
-                '<%= path.tmp %>/underscore.min.js',                            //  16 kb
-                '<%= path.tmp %>/backbone.min.js',                              //  19 kb
-                '<%= path.tmp %>/bootbox.min.js',                               //   9 kb
+                '<%= path.src.npm %>/complexify/jquery.complexify.min.js',      //   2 kb
+                '<%= path.tmp %>/bootbox.min.js',                               //  10 kb
                 '<%= path.tmp %>/jquery.magnific-popup.min.js',                 //  21 kb
                 '<%= path.src.lib %>/jquery-ui-1.11.4.custom/jquery-ui.min.js', //  96 kb
-                '<%= path.tmp %>/bootstrap-file-input.min.js',                  //   1 kb
+                '<%= path.tmp %>/bootstrap-file-input.min.js',                  //   2 kb
                 '<%= path.tmp %>/jquery-hotkeys.min.js',                        //   2 kb
-                '<%= path.tmp %>/jquery.iframe-transport.min.js',               //   2 kb
-                '<%= path.tmp %>/jquery.fileupload.min.js',                     //  15 kb
-                '<%= path.tmp %>/bootstrap.min.js',                             //   2 kb
-                '<%= path.src.lib %>/select2/select2.min.js',                   //  66 kb
+                '<%= path.tmp %>/jquery.iframe-transport.min.js',               //   3 kb
+                '<%= path.tmp %>/jquery.fileupload.min.js',                     //  18 kb
+                '<%= path.tmp %>/jquery.fileupload-process.min.js',             //   2 kb
+                '<%= path.tmp %>/jquery.fileupload-validate.min.js',            //   2 kb
+                '<%= path.tmp %>/bootstrap.min.js',                             //  24 kb
+                '<%= path.src.npm %>/select2/dist/js/select2.min.js',           //  62 kb
                 '<%= path.tmp %>/moment.min.js',                                //  35 kb
-                '<%= path.tmp %>/modernizr-custom.min.js'                       //   5 kb
+                '<%= path.tmp %>/modernizr-custom.min.js',                      //   5 kb
+                '<%= path.tmp %>/select2.sortable.min.js'                           //   5 kb
             ],
             dest: '<%= path.dest.js %>/lib.js'
         },
@@ -108,10 +117,10 @@ module.exports = function (grunt, option) {
             src: [
                 '<%= path.src.lib %>/jquery-ui-1.11.4.custom/jquery-ui.structure.css',
                 '<%= path.src.lib %>/jquery-ui-1.11.4.custom/jquery-ui.theme.css',
-                '<%= path.src.lib %>/select2/select2.css',
-                '<%= path.src.bower %>/blueimp-file-upload/css/jquery.fileupload.css',
-                '<%= path.src.bower %>/blueimp-file-upload/css/jquery.fileupload-ui.css',
-                '<%= path.src.bower %>/magnific-popup/dist/magnific-popup.css'
+                '<%= path.src.npm %>/select2/dist/css/select2.css',
+                '<%= path.src.npm %>/blueimp-file-upload/css/jquery.fileupload.css',
+                '<%= path.src.npm %>/blueimp-file-upload/css/jquery.fileupload-ui.css',
+                '<%= path.src.npm %>/magnific-popup/dist/magnific-popup.css'
             ],
             dest: '<%= path.dest.css %>/lib.css'
         }

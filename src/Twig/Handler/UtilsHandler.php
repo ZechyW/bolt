@@ -52,28 +52,11 @@ class UtilsHandler
      */
     public function printBacktrace($depth, $safe)
     {
-        if ($safe || !$this->app['debug']) {
+        if (!$this->allowDebug($safe)) {
             return null;
         }
 
         return VarDumper::dump(debug_backtrace(DEBUG_BACKTRACE_PROVIDE_OBJECT, $depth));
-    }
-
-    /**
-     * Output pretty-printed arrays / objects.
-     *
-     * @param mixed   $var
-     * @param boolean $safe
-     *
-     * @return string
-     */
-    public function printDump($var, $safe)
-    {
-        if ($safe || !$this->app['debug']) {
-            return null;
-        }
-
-        return VarDumper::dump($var);
     }
 
     /**
@@ -87,25 +70,21 @@ class UtilsHandler
      */
     public function printFirebug($var, $msg, $safe)
     {
-        if ($safe) {
+        if (!$this->allowDebug($safe)) {
             return null;
         }
-        if ($this->app['debug']) {
-            if (is_array($var)) {
-                $this->app['logger.firebug']->info($msg, $var);
-            } elseif (is_string($var)) {
-                $this->app['logger.firebug']->info($var);
-            } else {
-                $this->app['logger.firebug']->info($msg, (array) $var);
-            }
-        } else {
-            return null;
+
+        if (is_string($msg)) {
+            $this->app['logger.firebug']->info($msg, (array) $var);
+        } elseif (is_string($var)) {
+            $this->app['logger.firebug']->info($var, (array) $msg);
         }
     }
 
     /**
      * Redirect the browser to another page.
      *
+     * @param string  $path
      * @param boolean $safe
      *
      * @return string
@@ -127,12 +106,12 @@ class UtilsHandler
      *
      * @param string  $parameter    The parameter to get
      * @param string  $from         'GET' or 'POST', all the others falls back to REQUEST.
-     * @param boolean $stripslashes Apply stripslashes. Defaults to false.
+     * @param boolean $stripSlashes Apply stripslashes. Defaults to false.
      * @param boolean $safe
      *
      * @return mixed
      */
-    public function request($parameter, $from, $stripslashes, $safe)
+    public function request($parameter, $from, $stripSlashes, $safe)
     {
         // Don't expose request in safe context
         if ($safe) {
@@ -149,10 +128,29 @@ class UtilsHandler
             $request = $this->app['request']->get($parameter, false);
         }
 
-        if ($stripslashes) {
+        if ($stripSlashes) {
             $request = stripslashes($request);
         }
 
         return $request;
+    }
+
+    /**
+     * Helper function to determine if we're supposed to allow `backtrace`
+     * and `firebug`. If `$safe` is set or `$this->app['debug']` is false, we
+     * don't allow it. Otherwise we show only to _logged on_ users, _or_
+     * non-authenticated users, but then `debug_show_loggedoff` needs to be set.
+     *
+     * @param boolean $safe
+     *
+     * @return boolean
+     */
+    private function allowDebug($safe)
+    {
+        $debug = $this->app['debug'];
+        $isUser = (bool) $this->app['users']->getCurrentUser() ?: false;
+        $showAlways = $this->app['config']->get('general/debug_show_loggedoff', false);
+
+        return !$safe && $debug && ($isUser || $showAlways);
     }
 }

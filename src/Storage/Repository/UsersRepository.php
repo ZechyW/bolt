@@ -10,6 +10,8 @@ use Doctrine\DBAL\Query\QueryBuilder;
  */
 class UsersRepository extends Repository
 {
+    private $userEntities = [];
+
     /**
      * Delete a user.
      *
@@ -20,6 +22,9 @@ class UsersRepository extends Repository
      */
     public function deleteUser($userId)
     {
+        // Forget remembered users.
+        $this->userEntities = [];
+
         $query = $this->deleteUserQuery($userId);
 
         return $query->execute();
@@ -57,9 +62,21 @@ class UsersRepository extends Repository
      */
     public function getUser($userId)
     {
-        $query = $this->getUserQuery($userId);
+        // Check if we've already retrieved this user.
+        if (isset($this->userEntities[$userId])) {
+            return $this->userEntities[$userId];
+        }
 
-        return $this->findOneWith($query);
+        $query = $this->getUserQuery($userId);
+        /** @var Entity\Users $userEntity */
+        if ($userEntity = $this->findOneWith($query)) {
+            $this->unsetSensitiveFields($userEntity);
+        }
+
+        // Remember the user
+        $this->userEntities[$userId] = $userEntity;
+
+        return $userEntity;
     }
 
     /**
@@ -77,11 +94,64 @@ class UsersRepository extends Repository
         if (is_numeric($userId)) {
             $qb->where('id = :userId');
         } else {
-            $qb->where('username = :userId')->orWhere('email = :userId');
+            $qb
+                ->where($qb->expr()->like('username', ':userId'))
+                ->orWhere('email = :userId')
+            ;
         }
         $qb->setParameter('userId', $userId);
 
         return $qb;
+    }
+
+    /**
+     * Get a user's authentication data.
+     *
+     * @param string|integer $userId
+     *
+     * @return Entity\Users|false
+     */
+    public function getUserAuthData($userId)
+    {
+        $query = $this->getUserAuthDataQuery($userId);
+
+        return $this->findOneWith($query);
+    }
+
+    /**
+     * Get the user fetch query.
+     *
+     * @param string|integer $userId
+     *
+     * @return QueryBuilder
+     */
+    public function getUserAuthDataQuery($userId)
+    {
+        $qb = $this->createQueryBuilder();
+        $qb->select('id')
+            ->addSelect('password')
+            ->addSelect('shadowpassword')
+            ->where('id = :userId')
+            ->setParameter('userId', $userId);
+
+        return $qb;
+    }
+
+    /**
+     * Get all the system users.
+     *
+     * @return Entity\Users[]|false
+     */
+    public function getUsers()
+    {
+        $userEntities = $this->findAll();
+        if ($userEntities) {
+            foreach ($userEntities as $userEntity) {
+                $this->unsetSensitiveFields($userEntity);
+            }
+        }
+
+        return $userEntities;
     }
 
     /**
@@ -135,23 +205,42 @@ class UsersRepository extends Repository
     }
 
     /**
-     * Saves a single object that already exists.
-     *
-     * @param object $entity The entity to save.
-     *
-     * @return boolean
+     * {@inheritdoc}
      */
-    public function update($entity)
+    public function save($entity, $silent = null)
     {
-        $password = $entity->getPassword(); // PHP 5.4 compatibility
-        if (empty($password) || $entity->getPassword() === '**dontchange**') {
-            $this->getPersister()->disableField('password');
-            $result = parent::update($entity);
-            $this->getPersister()->enableField('password');
+        $this->userEntities = [];
+
+        return parent::save($entity, $silent);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function update($entity, $exclusions = [])
+    {
+        // Forget remembered users.
+        $this->userEntities = [];
+
+        if ($entity->getPassword() === null) {
+            $result = parent::update($entity, ['password']);
         } else {
             $result = parent::update($entity);
         }
 
         return $result;
+    }
+
+    /**
+     * Null sensitive data that doesn't need to be passed around.
+     *
+     * @param Entity\Users $entity
+     */
+    protected function unsetSensitiveFields(Entity\Users $entity)
+    {
+        $entity->setPassword(null);
+        $entity->setShadowpassword(null);
+        $entity->setShadowtoken(null);
+        $entity->setShadowvalidity(null);
     }
 }

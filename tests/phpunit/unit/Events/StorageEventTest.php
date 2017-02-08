@@ -1,8 +1,8 @@
 <?php
 namespace Bolt\Tests\Events;
 
-use Bolt\Content;
 use Bolt\Events\StorageEvent;
+use Bolt\Legacy\Content;
 use Bolt\Tests\BoltUnitTest;
 
 /**
@@ -32,5 +32,20 @@ class StorageEventTest extends BoltUnitTest
         $event = new StorageEvent($content);
         $this->assertEquals(5, $event->getId());
         $this->assertEquals('pages', $event->getContentType());
+    }
+
+    public function testIsCreate()
+    {
+        $app = $this->getApp();
+        $content = new Content($app, 'pages');
+        $content->setValue('id', 5);
+
+        $event = new StorageEvent($content);
+
+        $event->setArgument('create', true);
+        $this->assertTrue($event->isCreate());
+
+        $event->setArgument('create', false);
+        $this->assertFalse($event->isCreate());
     }
 }

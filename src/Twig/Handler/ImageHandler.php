@@ -2,10 +2,11 @@
 
 namespace Bolt\Twig\Handler;
 
+use Bolt\Filesystem\Handler\ImageInterface;
+use Bolt\Filesystem\Handler\NullableImage;
+use Bolt\Helpers\Image\Thumbnail;
 use Bolt\Library as Lib;
 use Bolt\Translation\Translator as Trans;
-use PHPExif\Exif;
-use PHPExif\Reader\Reader as ExifReader;
 use Silex;
 
 /**
@@ -29,129 +30,58 @@ class ImageHandler
     /**
      * Helper function to make a path to an image.
      *
-     * @param string         $filename Target filename
+     * @param string         $fileName Target filename
      * @param string|integer $width    Target width
      * @param string|integer $height   Target height
      * @param string         $crop     String identifier for cropped images
      *
      * @return string Image path
      */
-    public function image($filename, $width = '', $height = '', $crop = '')
+    public function image($fileName = null, $width = null, $height = null, $crop = null)
     {
-        if ($width != '' || $height != '') {
+        //Check if it's an alias as the only parameter after $filename
+        if ($width && !$height && !$crop && $this->isAlias($width)) {
+            return $this->getAliasedUri($filename, $width);
+        }
+
+        if ($width || $height) {
             // You don't want the image, you just want a thumbnail.
-            return $this->thumbnail($filename, $width, $height, $crop);
+            return $this->thumbnail($fileName, $width, $height, $crop);
         }
 
         // After v1.5.1 we store image data as an array
-        if (is_array($filename)) {
-            $filename = isset($filename['filename']) ? $filename['filename'] : $filename['file'];
+        if (is_array($fileName)) {
+            $fileName = isset($fileName['filename']) ? $fileName['filename'] : (isset($fileName['file']) ? $fileName['file'] : '');
         }
 
         $image = sprintf(
-            '%sfiles/%s',
-            $this->app['resources']->getUrl('root'),
-            Lib::safeFilename($filename)
+            '%s%s',
+            $this->app['resources']->getUrl('files'),
+            Lib::safeFilename($fileName)
         );
 
         return $image;
     }
 
     /**
-     * Get an array with the dimensions of an image, together with its
-     * aspectratio and some other info.
+     * Get an image.
      *
-     * @param string  $filename
-     * @param boolean $safe
+     * @param string $fileName
+     * @param string $safe
      *
-     * @return array Specifics
+     * @return \Bolt\Filesystem\Handler\ImageInterface
      */
-    public function imageInfo($filename, $safe)
+    public function imageInfo($fileName, $safe)
     {
-        // This function is vulnerable to path traversal, so blocking it in
-        // safe mode for now.
-        if ($safe) {
+        if ($fileName instanceof ImageInterface) {
+            return $fileName;
+        } elseif ($safe) {
             return null;
         }
 
-        $fullpath = sprintf('%s/%s', $this->app['resources']->getPath('filespath'), $filename);
+        $image = $this->app['filesystem']->getFile('files://' . $fileName, new NullableImage());
 
-        if (!is_readable($fullpath) || !is_file($fullpath)) {
-            return false;
-        }
-
-        $types = [
-            0 => 'unknown',
-            1 => 'gif',
-            2 => 'jpeg',
-            3 => 'png',
-            4 => 'swf',
-            5 => 'psd',
-            6 => 'bmp'
-        ];
-
-        // Get the dimensions of the image
-        $imagesize = getimagesize($fullpath);
-
-        // Get the aspectratio
-        if ($imagesize[1] > 0) {
-            $ar = $imagesize[0] / $imagesize[1];
-        } else {
-            $ar = 0;
-        }
-
-        $info = [
-            'width'       => $imagesize[0],
-            'height'      => $imagesize[1],
-            'type'        => $types[$imagesize[2]],
-            'mime'        => $imagesize['mime'],
-            'aspectratio' => $ar,
-            'filename'    => $filename,
-            'fullpath'    => realpath($fullpath),
-            'url'         => str_replace('//', '/', $this->app['resources']->getUrl('files') . $filename)
-        ];
-
-        /** @var $reader \PHPExif\Reader\Reader */
-        $reader = ExifReader::factory(ExifReader::TYPE_NATIVE);
-
-        try {
-            // Get the EXIF data of the image
-            $exif = $reader->read($fullpath);
-        } catch (\RuntimeException $e) {
-            // No EXIF data… create an empty object.
-            $exif = new Exif();
-        }
-
-        // GPS coordinates
-        $gps = $exif->getGPS();
-        $gps = explode(',', $gps);
-
-        // If the picture is turned by exif, ouput the turned aspectratio
-        if (in_array($exif->getOrientation(), [6, 7, 8])) {
-            $exifturned = $imagesize[1] / $imagesize[0];
-        } else {
-            $exifturned = $ar;
-        }
-
-        // Output the relevant EXIF info
-        $info['exif'] = [
-            'latitude'    => isset($gps[0]) ? $gps[0] : false,
-            'longitude'   => isset($gps[1]) ? $gps[1] : false,
-            'datetime'    => $exif->getCreationDate(),
-            'orientation' => $exif->getOrientation(),
-            'aspectratio' => $exifturned ? : false
-        ];
-
-        // Landscape if aspectratio > 5:4
-        $info['landscape'] = ($ar >= 1.25) ? true : false;
-
-        // Portrait if aspectratio < 4:5
-        $info['portrait'] = ($ar <= 0.8) ? true : false;
-
-        // Square-ish, if neither portrait or landscape
-        $info['square'] = !$info['landscape'] && !$info['portrait'];
-
-        return $info;
+        return $image;
     }
 
     /**
@@ -164,39 +94,44 @@ class ImageHandler
      * Note: This function used to be called 'fancybox', but Fancybox was
      * deprecated in favour of the Magnific Popup library.
      *
-     * @param string  $filename Image filename
-     * @param integer $width    Image width
-     * @param integer $height   Image height
-     * @param string  $crop     Crop image string identifier
-     * @param string  $title    Display title for image
+     * @param string|array $fileName Image file name
+     * @param integer      $width    Image width
+     * @param integer      $height   Image height
+     * @param string       $crop     Crop image string identifier
+     * @param string       $title    Display title for image
      *
      * @return string HTML output
      */
-    public function popup($filename = '', $width = 100, $height = 100, $crop = '', $title = '')
+    public function popup($fileName = null, $width = null, $height = null, $crop = null, $title = null)
     {
-        if (!empty($filename)) {
-            $thumbconf = $this->app['config']->get('general/thumbnails');
+        if (empty($fileName)) {
+            return '';
+        }
 
-            $fullwidth = !empty($thumbconf['default_image'][0]) ? $thumbconf['default_image'][0] : 1000;
-            $fullheight = !empty($thumbconf['default_image'][1]) ? $thumbconf['default_image'][1] : 800;
+        $thumbconf = $this->app['config']->get('general/thumbnails');
+        $fullwidth = !empty($thumbconf['default_image'][0]) ? $thumbconf['default_image'][0] : 1000;
+        $fullheight = !empty($thumbconf['default_image'][1]) ? $thumbconf['default_image'][1] : 750;
 
-            $thumbnail = $this->thumbnail($filename, $width, $height, $crop);
-            $large = $this->thumbnail($filename, $fullwidth, $fullheight, 'r');
+        $thumb = $this->getThumbnail($fileName, $width, $height, $crop);
+        $largeThumb = $this->getThumbnail($fileName, $fullwidth, $fullheight, 'r');
 
-            if (empty($title)) {
-                $title = sprintf('%s: %s', Trans::__('Image'), $filename);
-            }
+        // BC Nightmare… If we're passed a title, use it, if not we might have
+        // one in the $fileName array, else use the file name
+        $title = $title ?: $thumb->getTitle() ?: sprintf('%s: %s', Trans::__('Image'), $thumb->getFileName());
+        $altTitle = $thumb->getAltTitle() ?: $title;
 
+        if ($this->getThumbnailUri($largeThumb)) {
             $output = sprintf(
-                '<a href="%s" class="magnific" title="%s"><img src="%s" width="%s" height="%s"></a>',
-                $large,
+                '<a href="%s" class="magnific" title="%s"><img src="%s" width="%s" height="%s" alt="%s"></a>',
+                $this->getThumbnailUri($largeThumb),
                 $title,
-                $thumbnail,
-                $width,
-                $height
+                $this->getThumbnailUri($thumb),
+                $thumb->getWidth(),
+                $thumb->getHeight(),
+                $altTitle
             );
         } else {
-            $output = '&nbsp;';
+            $output = '';
         }
 
         return $output;
@@ -206,103 +141,156 @@ class ImageHandler
      * Helper function to show an image on a rendered page.
      *
      * Set width or height parameter to '0' for proportional scaling.
-     * Set them both to '0' to get original width and height.
+     * Set them both to null (or not at all) to get the default size from config.yml.
      *
      * Example: {{ content.image|showimage(320, 240) }}
      * Example: {{ showimage(content.image, 320, 240) }}
      *
-     * @param string  $filename Image filename
+     * @param string  $fileName Image filename
      * @param integer $width    Image width
      * @param integer $height   Image height
      * @param string  $crop     Crop image string identifier
      *
      * @return string HTML output
      */
-    public function showImage($filename = '', $width = 0, $height = 0, $crop = '')
+    public function showImage($fileName = null, $width = null, $height = null, $crop = null)
     {
-        if (empty($filename)) {
-            return '&nbsp;';
-        } else {
-            $width = intval($width);
-            $height = intval($height);
-
-            if ($width === 0 || $height === 0) {
-                $info = $this->imageInfo($filename);
-
-                if ($width !== 0) {
-                    $height = round($width / $info['aspectratio']);
-                } elseif ($height !== 0) {
-                    $width = round($height * $info['aspectratio']);
-                } else {
-                    $width = $info['width'];
-                    $height = $info['height'];
-                }
-            }
-
-            $image = $this->thumbnail($filename, $width, $height, $crop);
-
-            return '<img src="' . $image . '" width="' . $width . '" height="' . $height . '">';
+        if (empty($fileName)) {
+            return '';
         }
+        $thumb = $this->getThumbnail($fileName, $width, $height, $crop);
+
+        if ($width === null && $height === null) {
+            $thumbconf = $this->app['config']->get('general/thumbnails');
+            $width = !empty($thumbconf['default_image'][0]) ? $thumbconf['default_image'][0] : 1000;
+            $height = !empty($thumbconf['default_image'][1]) ? $thumbconf['default_image'][1] : 750;
+            $thumb->setWidth($width);
+            $thumb->setHeight($height);
+        } elseif ($width === null xor $height === null) {
+            $info = $this->imageInfo($thumb->getFileName(), false)->getInfo();
+
+            if ($width !== null) {
+                $width = min($width, $info->getWidth());
+                $thumb->setHeight(round($width / $info->getAspectRatio()));
+            } elseif ($height !== null) {
+                $height = min($height, $info->getHeight());
+                $thumb->setWidth(round($height * $info->getAspectRatio()));
+            } else {
+                $thumb->setWidth($info->getWidth());
+                $thumb->setHeight($info->getHeight());
+            }
+        }
+
+        return sprintf(
+            '<img src="%s" width="%s" height="%s" alt="%s">',
+            $this->getThumbnailUri($thumb),
+            $thumb->getWidth(),
+            $thumb->getHeight(),
+            $thumb->getAltTitle()
+        );
     }
 
     /**
      * Helper function to make a path to an image thumbnail.
      *
-     * @param string     $filename Target filename
+     * @param string     $fileName Target filename
      * @param string|int $width    Target width
      * @param string|int $height   Target height
-     * @param string     $zoomcrop Zooming and cropping: Set to 'f(it)', 'b(orders)', 'r(esize)' or 'c(rop)'
+     * @param string     $crop     Zooming and cropping: Set to 'f(it)', 'b(orders)', 'r(esize)' or 'c(rop)'
      *                             Set width or height parameter to '0' for proportional scaling
      *                             Setting them to '' uses default values.
      *
-     * @return string Thumbnail path
+     * @return string Relative URL of the thumbnail
      */
-    public function thumbnail($filename, $width = '', $height = '', $zoomcrop = 'crop')
+    public function thumbnail($fileName = null, $width = null, $height = null, $crop = null)
     {
-        if (!is_numeric($width)) {
-            $thumbconf = $this->app['config']->get('general/thumbnails');
-            $width = empty($thumbconf['default_thumbnail'][0]) ? 100 : $thumbconf['default_thumbnail'][0];
+        //Check if it's an alias as the only parameter after $filename
+        if ($width && !$height && !$crop && $this->isAlias($width)) {
+            return $this->getAliasedUri($fileName, $width);
         }
 
-        if (!is_numeric($height)) {
-            $thumbconf = $this->app['config']->get('general/thumbnails');
-            $height = empty($thumbconf['default_thumbnail'][1]) ? 100 : $thumbconf['default_thumbnail'][1];
+        $thumb = $this->getThumbnail($fileName, $width, $height, $crop);
+
+        return $this->getThumbnailUri($thumb);
+    }
+
+    /**
+     * Get a thumbnail object.
+     *
+     * @param string|array $fileName
+     * @param integer      $width
+     * @param integer      $height
+     * @param string       $scale
+     *
+     * @return Thumbnail
+     */
+    private function getThumbnail($fileName = null, $width = null, $height = null, $scale = null)
+    {
+        $thumb = new Thumbnail($this->app['config']->get('general/thumbnails'));
+        $thumb
+            ->setFileName($fileName)
+            ->setWidth($width)
+            ->setHeight($height)
+            ->setScale($scale)
+        ;
+
+        return $thumb;
+    }
+
+    /**
+     * Get the thumbnail relative URI, using width, height and action.
+     *
+     * @param Thumbnail $thumb
+     *
+     * @return mixed
+     */
+    private function getThumbnailUri(Thumbnail $thumb)
+    {
+        if ($thumb->getFileName() == null) {
+            return false;
         }
 
-        switch ($zoomcrop) {
-            case 'fit':
-            case 'f':
-                $scale = 'f';
-                break;
-
-            case 'resize':
-            case 'r':
-                $scale = 'r';
-                break;
-
-            case 'borders':
-            case 'b':
-                $scale = 'b';
-                break;
-
-            case 'crop':
-            case 'c':
-                $scale = 'c';
-                break;
-
-            default:
-                $scale = !empty($thumbconf['cropping']) ? $thumbconf['cropping'] : 'c';
-        }
-
-        // After v1.5.1 we store image data as an array
-        if (is_array($filename)) {
-            $filename = isset($filename['filename']) ? $filename['filename'] : $filename['file'];
-        }
-
-        $path = $this->app['url_generator']->generate(
-            'thumb', ['thumb' => round($width) . 'x' . round($height) . $scale . '/' . $filename]
+        return $this->app['url_generator']->generate(
+            'thumb',
+            [
+                'width'  => $thumb->getWidth(),
+                'height' => $thumb->getHeight(),
+                'action' => $thumb->getScale(),
+                'file'   => $thumb->getFileName(),
+            ]
         );
+    }
 
-        return $path;
+    /**
+     * Get the thumbnail relative URI, using an alias.
+     *
+     * @param mixed  $filename
+     * @param string $alias
+     *
+     * @return mixed
+     */
+    private function getAliasedUri($filename, $alias)
+    {
+        if (!$this->isAlias($alias)) {
+            return false;
+        }
+
+        // If we're passing in an image as array, instead of a single filename.
+        if (is_array($filename) && isset($filename['file'])) {
+            $filename = $filename['file'];
+        }
+
+        return $this->app['url_generator']->generate(
+            'thumb_alias',
+            [
+                'alias'  => $alias,
+                'file'   => $filename,
+            ]
+        );
+    }
+
+    private function isAlias($alias)
+    {
+        return (bool) $this->app['config']->get('theme/thumbnails/aliases/' . $alias, false);
     }
 }

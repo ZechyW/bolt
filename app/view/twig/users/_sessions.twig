@@ -1,12 +1,14 @@
+{% from '@bolt/_buic/_moment.twig' import buic_moment %}
+
 <div class="table-responsive">
     <table class="table table-striped dashboardlisting">
         <thead>
             <tr>
-                <th>{{ __('Username') }}</th>
-                <th>{{ __('Last seen') }}</th>
-                <th>{{ __('Session expires') }}</th>
-                <th>{{ __('IP address') }}</th>
-                <th>{{ __('Browser / platform') }}</th>
+                <th>{{ __('general.phrase.user-name') }}</th>
+                <th>{{ __('general.phrase.last-seen') }}</th>
+                <th>{{ __('general.phrase.session-expires') }}</th>
+                <th>{{ __('general.phrase.ip.address') }}</th>
+                <th>{{ __('general.phrase.browswer-platform') }}</th>
             </tr>
         </thead>
 
@@ -15,20 +17,16 @@
                 <tr>
                     <td>{{ session.username }}</td>
                     <td>
-                        <time class="moment" datetime="{{ session.lastseen|date("c") }}" title="{{ session.lastseen|date('Y-m-d H:i:s') }}">
-                            {{ session.lastseen|date('Y-m-d H:i:s') }}
-                        </time>
+                        {{ buic_moment(session.lastseen) }}
                     </td>
                     <td>
-                        <time class="moment" datetime="{{ session.validity|date("c") }}" title="{{ session.validity|date('Y-m-d H:i:s') }}">
-                            {{ session.validity|date('Y-m-d H:i:s') }}
-                        </time>
+                        {{ buic_moment(session.validity) }}
                     </td>
                     <td>
                         {{ session.ip }}
                     </td>
                     <td>
-                        <span class="useragent label info-pop" data-html="true" data-content="{{ session.useragent }}">{{ session.browser }}</span>
+                        <span class="useragent buic-moment info-pop" data-html="true" data-content="{{ session.useragent }}">{{ session.browser }}</span>
                     </td>
                 </tr>
             {% endfor %}

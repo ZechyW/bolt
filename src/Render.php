@@ -3,6 +3,8 @@
 namespace Bolt;
 
 use Bolt\Response\BoltResponse;
+use Silex;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -26,10 +28,10 @@ class Render
     /**
      * Set up the object.
      *
-     * @param \Bolt\Application|\Silex\Application $app
-     * @param bool                                 $safe
+     * @param \Silex\Application $app
+     * @param bool               $safe
      */
-    public function __construct(Application $app, $safe = false)
+    public function __construct(Silex\Application $app, $safe = false)
     {
         $this->app = $app;
         $this->safe = $safe;
@@ -62,28 +64,58 @@ class Render
     }
 
     /**
-     * Postprocess the rendered HTML: insert the snippets, and stuff.
+     * Check if the template exists.
      *
-     * @param Response $response
+     * @internal
      *
-     * @return string
+     * @param string $template The name of the template.
+     *
+     * @return bool
      */
-    public function postProcess(Response $response)
+    public function hasTemplate($template)
     {
-        $html = $response->getContent();
+        /** @var \Twig_Environment $env */
+        $env = $this->app[$this->twigKey];
+        $loader = $env->getLoader();
 
-        /** @var \Bolt\Asset\QueueInterface $queue */
-        foreach ($this->app['asset.queues'] as $queue) {
-            $html = $queue->process($html);
+        /*
+         * Twig_ExistsLoaderInterface is getting merged into
+         * Twig_LoaderInterface in Twig 2.0. Check for this
+         * instead once we are there, and remove getSource() check.
+         */
+        if ($loader instanceof \Twig_ExistsLoaderInterface) {
+            return $loader->exists($template);
         }
 
-        $this->cacheRequest($html);
+        try {
+            $loader->getSource($template);
+        } catch (\Twig_Error_Loader $e) {
+            return false;
+        }
 
-        return $html;
+        return true;
+    }
+
+    /**
+     * Post-process the rendered HTML: insert the snippets, and stuff.
+     *
+     * @param Request  $request
+     * @param Response $response
+     */
+    public function postProcess(Request $request, Response $response)
+    {
+        /** @var \Bolt\Asset\QueueInterface $queue */
+        if (!$this->app['request_stack']->getCurrentRequest()->isXmlHttpRequest()) {
+            foreach ($this->app['asset.queues'] as $queue) {
+                $queue->process($request, $response);
+            }
+        }
     }
 
     /**
      * Retrieve a fully cached page from cache.
+     *
+     * @deprecated Deprecated since 3.1, to be removed in 4.0. @see \Silex\HttpCache
      *
      * @return \Symfony\Component\HttpFoundation\Response|boolean
      */
@@ -103,7 +135,12 @@ class Render
                 // maximum duration, otherwise a proxy/cache might keep the
                 // cache twice as long in the worst case scenario, and now it's
                 // only 50% max, but likely less
-                $response->setSharedMaxAge($this->cacheDuration() / 2);
+                // 's_maxage' sets the cache for shared caches.
+                // max_age sets it for regular browser caches
+
+                $age = $this->cacheDuration() / 2;
+
+                $response->setMaxAge($age)->setSharedMaxAge($age);
             }
         }
 
@@ -111,13 +148,17 @@ class Render
     }
 
     /**
-     * Store a fully rendered (and postprocessed) page to cache.
+     * Store a fully rendered (and post-processed) page to cache.
      *
-     * @param $html
+     * @deprecated Deprecated since 3.1, to be removed in 4.0. @see \Silex\HttpCache
+     *
+     * @param Response $response
      */
-    public function cacheRequest($html)
+    public function cacheRequest(Response $response)
     {
         if ($this->checkCacheConditions('request')) {
+            $html = $response->getContent();
+
             // This is where the magic happens.. We also store it with an empty
             // 'template' name, so we can later fetch it by its request.
             $key = md5($this->app['request']->getPathInfo() . $this->app['request']->getQueryString());
@@ -127,6 +168,8 @@ class Render
 
     /**
      * Get the duration (in seconds) for the cache.
+     *
+     * @deprecated Deprecated since 3.1, to be removed in 4.0. @see \Silex\HttpCache
      *
      * @return integer
      */
@@ -141,6 +184,8 @@ class Render
 
     /**
      * Check if the current conditions are suitable for caching.
+     *
+     * @deprecated Deprecated since 3.1, to be removed in 4.0. @see \Silex\HttpCache
      *
      * @param string $type
      * @param bool   $checkoverride

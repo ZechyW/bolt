@@ -17,11 +17,10 @@ class FilesystemProviderTest extends BoltUnitTest
             new \Pimple(
                 [
                     'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
-        $config->compat();
         $bolt = $this->getApp();
 
         $this->assertNotNull($bolt['filesystem']);
@@ -34,13 +33,12 @@ class FilesystemProviderTest extends BoltUnitTest
             new \Pimple(
                 [
                     'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
-        $config->compat();
         $bolt = $this->getApp();
-        $this->assertInstanceOf('League\Flysystem\Filesystem', $bolt['filesystem']->getFilesystem());
-        $this->assertInstanceOf('League\Flysystem\Filesystem', $bolt['filesystem']->getFilesystem('config'));
+        $this->assertInstanceOf('Bolt\Filesystem\Filesystem', $bolt['filesystem']->getFilesystem('root'));
+        $this->assertInstanceOf('Bolt\Filesystem\Filesystem', $bolt['filesystem']->getFilesystem('config'));
     }
 }

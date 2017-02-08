@@ -1,8 +1,7 @@
 <?php
 namespace Bolt\Tests\Storage;
 
-use Bolt\Storage;
-use Bolt\Storage\EntityManager;
+use Bolt\Legacy\Storage;
 use Bolt\Tests\BoltUnitTest;
 use Bolt\Tests\Mocks\LoripsumMock;
 use Symfony\Component\HttpFoundation\Request;
@@ -18,30 +17,61 @@ class FieldLoadTest extends BoltUnitTest
     {
         $this->resetDb();
         $app = $this->getApp();
-        $this->addNewUser($app, 'admin', 'Admin', 'admin');
-        $app['schema']->repairTables();
+        $app['schema']->update();
+        $this->addDefaultUser($app);
         $this->addSomeContent();
         $em = $app['storage'];
         $repo = $em->getRepository('showcases');
 
         $record = $repo->find(1);
-
-        foreach ($record->entries as $entry) {
-            $this->assertNotEmpty($entry->id);
-            $this->assertNotEmpty($entry->slug);
+        foreach ($record->relation['entries'] as $entry) {
+            $this->assertNotEmpty($entry->getId());
+            $this->assertNotEmpty($entry->getSlug());
         }
     }
 
     public function testTaxonomyLoad()
     {
         $app = $this->getApp();
-        $app['schema']->repairTables();
         $em = $app['storage'];
         $repo = $em->getRepository('showcases');
 
         $record = $repo->find(1);
-        $this->assertTrue(is_array($record->categories));
-        $this->assertTrue(is_array($record->tags));
+        $this->assertInstanceOf('Bolt\Storage\Collection\Taxonomy', $record->taxonomy['categories']);
+        $this->assertInstanceOf('Bolt\Storage\Collection\Taxonomy', $record->taxonomy['tags']);
+    }
+
+    public function testRepeaterLoad()
+    {
+        $app = $this->getApp();
+        $em = $app['storage'];
+        $this->addSomeFields();
+        $repo = $em->getRepository('showcases');
+        $record = $repo->find(1);
+        $this->assertInstanceOf('Bolt\Storage\Field\Collection\RepeatingFieldCollection', $record->repeater);
+        $this->assertEquals(2, count($record->repeater));
+        foreach ($record->repeater as $collection) {
+            $this->assertInstanceOf('Bolt\Storage\Field\Collection\FieldCollection', $collection);
+            foreach ($collection as $fieldValue) {
+                $this->assertInstanceOf('Bolt\Storage\Entity\FieldValue', $fieldValue);
+            }
+        }
+    }
+
+    public function testGroupingTaxonomy()
+    {
+        $app = $this->getApp();
+        $em = $app['storage'];
+        $repo = $em->getRepository('pages');
+        $record = $repo->find(3);
+        $tax = $em->createCollection('Bolt\Storage\Entity\Taxonomy');
+        $tax->setFromPost(['groups' => ['main']], $record);
+        $record->setTaxonomy($tax);
+        $repo->save($record);
+        $recordSaved = $repo->find(3);
+        $this->assertInstanceOf('Bolt\Storage\Collection\Taxonomy', $recordSaved->taxonomy['groups']);
+        $this->assertInstanceOf('Bolt\Storage\Collection\Taxonomy', $recordSaved->getGroups());
+        $this->assertEquals(1, count($recordSaved->getGroups()));
     }
 
     protected function addSomeContent()
@@ -59,10 +89,25 @@ class FieldLoadTest extends BoltUnitTest
         $showcases = $storage->getContent('showcases');
         $randEntries = $storage->getContent('entries/random/2');
         foreach ($showcases as $show) {
-            foreach ($randEntries as $key => $entry) {
+            foreach (array_keys($randEntries) as $key) {
                 $show->setRelation('entries', $key);
                 $storage->saveContent($show);
             }
         }
+    }
+
+    protected function addSomeFields()
+    {
+        $app = $this->getApp();
+        $repo = $app['storage']->getRepository('showcases');
+        $content = $repo->find(1);
+
+        $repeat = [
+            ['repeattitle' => 'Test', 'repeatimage' => ['file' => 'example.jpg', 'title' => 'Test Image']],
+            ['repeattitle' => 'Test 2', 'repeatimage' => ['file' => 'example2.jpg', 'title' => 'Test Image 2']],
+        ];
+        $content->setRepeater($repeat);
+
+        $repo->save($content);
     }
 }

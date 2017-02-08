@@ -6,16 +6,18 @@ var init = {
      * @returns {undefined}
      */
     depublishTracking: function () {
+        "use strict";
+
         var noticeID = 'dateDepublishNotice',
             msg = $('#datedepublish').data('notice');
 
-        $('#datedepublish, #statusselect').on('change', function(event){
+        $('#datedepublish, #statusselect').on('change', function (){
 
             var status = $('#statusselect').val(),
                 depublish = $('#datedepublish').val();
 
             // remove old notice
-            $('.'+noticeID).remove();
+            $('.' + noticeID).remove();
 
             if (depublish === '') {
                 return;
@@ -41,46 +43,19 @@ var init = {
      *
      * @param {object} data
      * @returns {undefined}
+     *
+     * @fires "Bolt.File.Save.Start"
+     * @fires "Bolt.File.Save.Done"
+     * @fires "Bolt.File.Save.Fail"
+     * @fires "Bolt.File.Save.Always"
      */
     bindEditFile: function (data) {
-        $('#saveeditfile').bind('click', function (e) {
+        "use strict";
 
-            // If not on mobile (i.e. Codemirror is present), copy back to the textarea.
-            if (typeof(CodeMirror) !== 'undefined') {
-                $('#form_contents').val(editor.getValue());
-            }
+        var editor;
 
-            // Ping @rarila: How the heck would I get bolt.data('editcontent.msg.saving') here?
-            var saving = "Saving …",
-                savedon = $('p.lastsaved').html(),
-                msgNotSaved = "Not saved";
-
-            // Disable the buttons, to indicate stuff is being done.
-            $('#saveeditfile').addClass('disabled');
-            $('#saveeditfile i').addClass('fa-spin fa-spinner');
-            $('p.lastsaved').text(saving);
-
-            $.post('?returnto=ajax', $('#editfile').serialize())
-                .done(function (data) {
-                    if (!data.ok) {
-                        alert(data.msg);
-                    }
-                    $('p.lastsaved').html(data.msg);
-                })
-                .fail(function(){
-                    alert(msgNotSaved);
-                })
-                .always(function(){
-                    // Re-enable buttons
-                    window.setTimeout(function(){
-                        $('#saveeditfile').removeClass('disabled').blur();
-                        $('#saveeditfile i').removeClass('fa-spin fa-spinner');
-                    }, 300);
-                });
-        });
-
-        if (typeof(CodeMirror) !== 'undefined') {
-            var editor = CodeMirror.fromTextArea(document.getElementById('form_contents'), {
+        if (typeof CodeMirror !== 'undefined') {
+            editor = CodeMirror.fromTextArea(document.getElementById('form_contents'), {
                 lineNumbers: true,
                 autofocus: true,
                 tabSize: 4,
@@ -95,6 +70,45 @@ var init = {
             editor.setSize(null, newheight);
         }
 
+        $('#saveeditfile').on('click', function () {
+            Bolt.events.fire('Bolt.File.Save.Start');
+
+            // Copy back to the textarea.
+            if (editor) {
+                editor.save();
+            }
+
+            var msgNotSaved = 'Not saved';
+
+            // Disable the buttons, to indicate stuff is being done.
+            $('#saveeditfile').addClass('disabled');
+            $('#saveeditfile i').addClass('fa-spin fa-spinner');
+            $('p.lastsaved').text(Bolt.data('editcontent.msg.saving'));
+
+            $.post('?returnto=ajax', $('#editfile').serialize())
+                .done(function (data) {
+                    if (!data.ok) {
+                        alert(data.msg);
+                        Bolt.events.fire('Bolt.File.Save.Fail', data);
+                    } else {
+                        Bolt.events.fire('Bolt.File.Save.Done', data);
+                    }
+                    $('p.lastsaved').html(data.msg);
+                })
+                .fail(function () {
+                    Bolt.events.fire('Bolt.File.Save.Fail');
+                    alert(msgNotSaved);
+                })
+                .always(function () {
+                    Bolt.events.fire('Bolt.File.Save.Always');
+
+                    // Re-enable buttons
+                    window.setTimeout(function () {
+                        $('#saveeditfile').removeClass('disabled').blur();
+                        $('#saveeditfile i').removeClass('fa-spin fa-spinner');
+                    }, 300);
+                });
+        });
     },
 
     /*
@@ -104,6 +118,8 @@ var init = {
      * @returns {undefined}
      */
     bindEditLocale: function (data) {
+        "use strict";
+
         var editor = CodeMirror.fromTextArea(document.getElementById('form_contents'), {
             lineNumbers: true,
             autofocus: true,
@@ -120,16 +136,18 @@ var init = {
      * Bind filebrowser
      */
     bindFileBrowser: function () {
+        "use strict";
+
         $('#myTab a').click(function (e) {
             e.preventDefault();
             $(this).tab('show');
         });
 
-        var getUrlParam = function(paramName) {
+        var getUrlParam = function (paramName) {
             var reParam = new RegExp('(?:[\?&]|&)' + paramName + '=([^&]+)', 'i'),
                 match = window.location.search.match(reParam);
 
-            return (match && match.length > 1) ? match[1] : null;
+            return match && match.length > 1 ? match[1] : null;
         };
         var funcNum = getUrlParam('CKEditorFuncNum');
 
@@ -145,12 +163,14 @@ var init = {
         });
     },
 
-    bindCkFileSelect: function (data) {
+    bindCkFileSelect: function () {
+        "use strict";
+
         var getUrlParam = function (paramName) {
             var reParam = new RegExp('(?:[\?&]|&)' + paramName + '=([^&]+)', 'i'),
                 match = window.location.search.match(reParam);
 
-            return (match && match.length > 1) ? match[1] : null;
+            return match && match.length > 1 ? match[1] : null;
         };
 
         var funcNum = getUrlParam('CKEditorFuncNum');
@@ -166,12 +186,14 @@ var init = {
      * Bind prefill
      */
     bindPrefill: function () {
-        $('#check-all').on('click', function() {
+        "use strict";
+
+        $('#check-all').on('click', function () {
             // because jQuery is being retarded.
             // See: http://stackoverflow.com/questions/5907645/jquery-chrome-and-checkboxes-strange-behavior
             $("#form_contenttypes :checkbox").removeAttr('checked').trigger('click');
         });
-        $('#uncheck-all').on('click', function() {
+        $('#uncheck-all').on('click', function () {
             $("#form_contenttypes :checkbox").removeAttr('checked');
         });
     },
@@ -182,75 +204,10 @@ var init = {
      * @returns {undefined}
      */
     confirmationDialogs: function () {
+        "use strict";
+
         $('.confirm').on('click', function () {
             return confirm($(this).data('confirm'));
-        });
-    },
-
-    /*
-     * Dashboard listing checkboxes
-     *
-     * @returns {undefined}
-     */
-    dashboardCheckboxes: function () {
-        // Check all checkboxes
-        $(".dashboardlisting tr th:first-child input:checkbox").click(function () {
-            var checkedStatus = this.checked;
-            $(this).closest('tbody').find('td input:checkbox').each(function () {
-                this.checked = checkedStatus;
-                if (checkedStatus === this.checked) {
-                    $(this).closest('table tbody tr').removeClass('row-checked');
-                }
-                if (this.checked) {
-                    $(this).closest('table tbody tr').addClass('row-checked');
-                }
-            });
-        });
-        // Check if any records in the overview have been checked, and if so: show action buttons
-        $('.dashboardlisting input:checkbox').click(function () {
-            var aItems = getSelectedItems();
-            if (aItems.length >= 1) {
-                // if checked
-                $('a.checkchosen').removeClass('disabled');
-                $('a.showifchosen').show();
-            } else {
-                // if none checked
-                $('a.checkchosen').addClass('disabled');
-                $('a.showifchosen').hide();
-            }
-        });
-        // Delete chosen Items
-        $("a.deletechosen").click(function (e) {
-            e.preventDefault();
-            var aItems = getSelectedItems(),
-                notice,
-                rec;
-
-            if (aItems.length > 0) {
-                notice = aItems.length === 1 ?
-                    Bolt.data('recordlisting.delete_one') : Bolt.data('recordlisting.delete_mult');
-                bootbox.confirm(notice, function (confirmed) {
-                    $('.alert').alert();
-                    if (confirmed === true) {
-                        // Delete request
-                        $.ajax({
-                            url: Bolt.conf('paths.bolt') + 'content/deletecontent/' +
-                                $('#item_' + aItems[0]).closest('table').data('contenttype') + '/' + aItems.join(',') +
-                                '?bolt_csrf_token=' + $('#item_' + aItems[0]).closest('table').data('bolt_csrf_token'),
-                            type: 'get',
-                            success: function (feedback) {
-                                var items = [];
-                                $.each(aItems, function (index, id) {
-                                    items.push(document.getElementById('item_' + id));
-                                });
-
-                                $(items).hide();
-                                $('a.deletechosen').hide();
-                            }
-                        });
-                    }
-                });
-            }
         });
     },
 
@@ -260,6 +217,8 @@ var init = {
      * @returns {undefined}
      */
     deferredWidgets: function () {
+        "use strict";
+
         $('div.widget').each(function () {
             if (typeof $(this).data('defer') === 'undefined') {
                 return;
@@ -287,6 +246,8 @@ var init = {
      * @returns {undefined}
      */
     dropDowns: function () {
+        "use strict";
+
         $('[data-toggle="dropdown"]').each(function (index, item) {
             var mouseEvt;
             if (typeof event === 'undefined') {
@@ -296,27 +257,25 @@ var init = {
             } else {
                 mouseEvt = event;
             }
-            $(item).parent().on('show.bs.dropdown', function (e) {
+            $(item).parent().on('show.bs.dropdown', function () {
 
                 // Prevent breakage on old IE.
                 if (typeof mouseEvt !== "undefined" && mouseEvt !== null) {
                     var self = $(this).find('[data-toggle="dropdown"]'),
-                    menu = self.next('.dropdown-menu'),
-                    mousey = mouseEvt.pageY + 20,
-                    menuHeight = menu.height(),
-                    menuVisY = $(window).height() - mousey + menuHeight, // Distance from the bottom of viewport
-                    profilerHeight = 37; // The size of the Symfony Profiler Bar is 37px.
+                        menu = self.next('.dropdown-menu'),
+                        mousey = mouseEvt.pageY + 20,
+                        menuHeight = menu.height(),
+                        menuVisY = $(window).height() - mousey + menuHeight, // Distance from the bottom of viewport
+                        profilerHeight = 37; // The size of the Symfony Profiler Bar is 37px.
 
                     // The whole menu must fit when trying to 'dropup', but always prefer to 'dropdown' (= default).
-                    if ((mousey - menuHeight) > 20 && menuVisY < profilerHeight) {
+                    if (mousey - menuHeight > 20 && menuVisY < profilerHeight) {
                         menu.css({
                             top: 'auto',
                             bottom: '100%'
                         });
                     }
                 }
-
-
             });
         });
     },
@@ -327,6 +286,8 @@ var init = {
      * @returns {undefined}
      */
     dropZone: function () {
+        "use strict";
+
         // @todo make it prettier, and distinguish between '.in' and '.hover'.
         $(document).bind('dragover', function (e) {
             var dropZone = $('.dropzone'),
@@ -352,7 +313,8 @@ var init = {
      * Initialize the Magnific popup shizzle. Fancybox is still here as a trigger, for backwards compatibility.
      */
     magnificPopup: function () {
-        //
+        "use strict";
+
         $('.magnific, .fancybox').magnificPopup({
             type: 'image',
             gallery: {
@@ -379,63 +341,12 @@ var init = {
      * @returns {undefined}
      */
     focusStatusSelect: function () {
+        "use strict";
+
         $('#lastsavedstatus').click(function (e) {
             e.preventDefault();
             $('a[href="#tab-meta"]').click();
             $('#statusselect').focus();
-        });
-     },
-
-    /*
-     * Omnisearch
-     *
-     * @returns {undefined}
-     */
-    omnisearch: function () {
-        $('.omnisearch').select2({
-            placeholder: '',
-            minimumInputLength: 3,
-            multiple: true, // this is for better styling …
-            ajax: {
-                url: Bolt.conf('paths.async') + 'omnisearch',
-                dataType: 'json',
-                data: function (term, page) {
-                    return {
-                        q: term
-                    };
-                },
-                results: function (data, page) {
-                    var results = [];
-                    $.each(data, function (index, item) {
-                        results.push({
-                            id: item.path,
-                            path: item.path,
-                            label: item.label,
-                            priority: item.priority
-                        });
-                    });
-
-                    return {results: results};
-                }
-            },
-            formatResult: function (item) {
-                var markup = '<table class="omnisearch-result"><tr>' +
-                    '<td class="omnisearch-result-info">' +
-                    '<div class="omnisearch-result-label">' + item.label + '</div>' +
-                    '<div class="omnisearch-result-description">' + item.path + '</div>' +
-                    '</td></tr></table>';
-
-                return markup;
-            },
-            formatSelection: function (item) {
-                window.location.href = item.path;
-
-                return item.label;
-            },
-            dropdownCssClass: "bigdrop",
-            escapeMarkup: function (m) {
-                return m;
-            }
         });
     },
 
@@ -445,6 +356,8 @@ var init = {
      * @returns {undefined}
      */
     passwordInput: function () {
+        "use strict";
+
         $(".togglepass").on('click', function () {
             if ($(this).hasClass('show-password')) {
                 $('input[name="password"]').attr('type', 'text');
@@ -457,12 +370,12 @@ var init = {
             }
         });
 
-        $('.login-forgot').bind('click', function (e) {
+        $('.login-forgot').bind('click', function () {
             $('.login-group, .password-group').hide();
             $('.reset-group').show();
         });
 
-        $('.login-remembered').bind('click', function (e) {
+        $('.login-remembered').bind('click', function () {
             $('.login-group, .password-group').show();
             $('.reset-group').hide();
         });
@@ -472,6 +385,8 @@ var init = {
      * Initialize popovers.
      */
     popOvers: function () {
+        "use strict";
+
         $('.info-pop').popover({
             trigger: 'hover',
             delay: {
@@ -481,61 +396,19 @@ var init = {
         });
     },
 
-    uploads: function () {
-        $('input[data-upload]').each(function (item) {
-            var data = $(this).data('upload'),
-                accept = $(this).attr('accept').replace(/\./g, ''),
-                autocomplete_conf;
-
-            switch (data.type) {
-                case 'Image':
-                case 'File':
-                    bindFileUpload(data.key);
-
-                    autocomplete_conf = {
-                        source: Bolt.conf('paths.async') + 'file/autocomplete?ext=' + encodeURIComponent(accept),
-                        minLength: 2
-                    };
-                    if (data.type === 'Image') {
-                        autocomplete_conf.close = function () {
-                            var path = $('#field-' + data.key).val(),
-                                url;
-
-                            if (path) {
-                                url = Bolt.conf('paths.root') +'thumbs/' + data.width + 'x' + data.height + 'c/' +
-                                      encodeURI(path);
-                            } else {
-                                url = Bolt.conf('paths.app') + 'view/img/default_empty_4x3.png';
-                            }
-                            $('#thumbnail-' + data.key).html(
-                                '<img src="'+ url + '" width="' + data.width + '" height="' + data.height + '">'
-                            );
-                        };
-                    }
-                    $('#field-' + data.key).autocomplete(autocomplete_conf);
-                    break;
-
-                case 'ImageList':
-                    Bolt.imagelist[data.key] = new FilelistHolder({id: data.key, type: data.type});
-                    break;
-
-                case 'FileList':
-                    Bolt.filelist[data.key] = new FilelistHolder({id: data.key, type: data.type});
-                    break;
-            }
-        });
-    },
 
     /*
      * ?
      */
     sortables: function () {
+        "use strict";
+
         $('tbody.sortable').sortable({
             items: 'tr',
             opacity: '0.5',
             axis: 'y',
             handle: '.sorthandle',
-            update: function (e, ui) {
+            update: function () {
                 var serial = $(this).sortable('serialize');
                 // Sorting request
                 $.ajax({
@@ -543,7 +416,7 @@ var init = {
                         $(this).parent('table').data('contenttype'),
                     type: 'POST',
                     data: serial,
-                    success: function (feedback) {
+                    success: function () {
                         // Do nothing
                     }
                 });

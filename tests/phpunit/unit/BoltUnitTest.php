@@ -2,11 +2,12 @@
 namespace Bolt\Tests;
 
 use Bolt\AccessControl\Token;
-use Bolt\Storage\Entity;
 use Bolt\Application;
 use Bolt\Configuration as Config;
 use Bolt\Configuration\Standard;
-use Bolt\Storage;
+use Bolt\Legacy\Storage;
+use Bolt\Render;
+use Bolt\Storage\Entity;
 use Bolt\Tests\Mocks\LoripsumMock;
 use Bolt\Twig\Handler\AdminHandler;
 use Bolt\Twig\Handler\ArrayHandler;
@@ -31,26 +32,56 @@ abstract class BoltUnitTest extends \PHPUnit_Framework_TestCase
     protected function resetDb()
     {
         // Make sure we wipe the db file to start with a clean one
-        if (is_readable(TEST_ROOT . '/bolt.db')) {
-            unlink(TEST_ROOT . '/bolt.db');
-            copy(PHPUNIT_ROOT . '/resources/db/bolt.db', TEST_ROOT . '/bolt.db');
+        if (is_readable(PHPUNIT_WEBROOT . '/app/database/bolt.db')) {
+            unlink(PHPUNIT_WEBROOT . '/app/database/bolt.db');
+            copy(PHPUNIT_ROOT . '/resources/db/bolt.db', PHPUNIT_WEBROOT . '/app/database/bolt.db');
         }
     }
 
-    protected function getApp()
+    protected function resetConfig()
+    {
+        $configFiles = [
+            'config.yml',
+            'contenttypes.yml',
+            'menu.yml',
+            'permissions.yml',
+            'routing.yml',
+            'taxonomy.yml',
+        ];
+        foreach ($configFiles as $configFile) {
+            // Make sure we wipe the db file to start with a clean one
+            if (is_readable(PHPUNIT_WEBROOT . '/app/config/' . $configFile)) {
+                unlink(PHPUNIT_WEBROOT . '/app/config/' . $configFile);
+            }
+        }
+    }
+
+    protected function getApp($boot = true)
     {
         if (!$this->app) {
             $this->app = $this->makeApp();
             $this->app->initialize();
-            $this->app->boot();
+
+            $verifier = new Config\Validation\Validator(
+                $this->app['controller.exception'],
+                $this->app['config'],
+                $this->app['resources'],
+                $this->app['logger.flash']
+            );
+            $verifier->checks();
+
+            if ($boot) {
+                $this->app->boot();
+            }
         }
+
         return $this->app;
     }
 
     protected function makeApp()
     {
         $config = new Standard(TEST_ROOT);
-        $config->verify();
+        $this->setAppPaths($config);
 
         $bolt = new Application(['resources' => $config]);
         $bolt['session.test'] = true;
@@ -58,17 +89,35 @@ abstract class BoltUnitTest extends \PHPUnit_Framework_TestCase
         $bolt['config']->set(
             'general/database',
             [
-                'driver' => 'pdo_sqlite',
-                'prefix' => 'bolt_',
-                'user'   => 'test',
-                'path'   => TEST_ROOT . '/bolt.db'
+                'driver'       => 'pdo_sqlite',
+                'prefix'       => 'bolt_',
+                'user'         => 'test',
+                'path'         => PHPUNIT_WEBROOT . '/app/database/bolt.db',
+                'wrapperClass' => '\Bolt\Storage\Database\Connection',
             ]
         );
-        $bolt['config']->set('general/canonical', 'bolt.dev');
-        $bolt['resources']->setPath('files', PHPUNIT_ROOT . '/resources/files');
+
+        $bolt['config']->set('general/canonical', 'bolt.test');
         $bolt['slugify'] = Slugify::create();
 
+        $this->setAppPaths($bolt['resources']);
+
         return $bolt;
+    }
+
+    /**
+     * @param Config\ResourceManager $config
+     */
+    protected function setAppPaths($config)
+    {
+        $config->setPath('app', PHPUNIT_WEBROOT . '/app');
+        $config->setPath('config', PHPUNIT_WEBROOT . '/app/config');
+        $config->setPath('cache', PHPUNIT_WEBROOT . '/app/cache');
+        $config->setPath('web', PHPUNIT_WEBROOT . '/');
+        $config->setPath('files', PHPUNIT_WEBROOT . '/files');
+        $config->setPath('themebase', PHPUNIT_WEBROOT . '/theme/');
+        $config->setPath('extensionsconfig', PHPUNIT_WEBROOT . '/config/extensions');
+        $config->setPath('extensions', PHPUNIT_WEBROOT . '/extensions');
     }
 
     protected function rmdir($dir)
@@ -104,6 +153,7 @@ abstract class BoltUnitTest extends \PHPUnit_Framework_TestCase
             'email'       => 'admin@example.com',
             'displayname' => 'Admin',
             'roles'       => ['admin'],
+            'enabled'     => true   ,
         ];
 
         $app['users']->saveUser(array_merge($app['users']->getEmptyUser(), $user));
@@ -111,40 +161,41 @@ abstract class BoltUnitTest extends \PHPUnit_Framework_TestCase
         return $user;
     }
 
-    protected function addNewUser($app, $username, $displayname, $role)
+    protected function addNewUser($app, $username, $displayname, $role, $enabled = true)
     {
         $user = [
             'username'    => $username,
             'password'    => 'password',
-            'email'       => $username.'@example.com',
+            'email'       => $username . '@example.com',
             'displayname' => $displayname,
             'roles'       => [$role],
+            'enabled'     => $enabled,
         ];
 
         $app['users']->saveUser(array_merge($app['users']->getEmptyUser(), $user));
         $app['users']->users = [];
     }
 
-    protected function getMockTwig()
+    protected function getRenderMock(Application $app)
     {
-        $twig = $this->getMock('Twig_Environment', ['render', 'fetchCachedRequest']);
-        $twig->expects($this->any())
+        $render = $this->getMock(Render::class, ['render', 'fetchCachedRequest'], [$app]);
+        $render->expects($this->any())
             ->method('fetchCachedRequest')
             ->will($this->returnValue(false));
 
-        return $twig;
+        return $render;
     }
 
-    protected function checkTwigForTemplate($app, $testTemplate)
+    protected function checkTwigForTemplate(Application $app, $testTemplate)
     {
-        $twig = $this->getMockTwig();
+        $render = $this->getRenderMock($app);
 
-        $twig->expects($this->any())
+        $render->expects($this->atLeastOnce())
             ->method('render')
             ->with($this->equalTo($testTemplate))
             ->will($this->returnValue(new Response()));
 
-        $app['render'] = $twig;
+        $app['render'] = $render;
     }
 
     protected function allowLogin($app)
@@ -167,12 +218,14 @@ abstract class BoltUnitTest extends \PHPUnit_Framework_TestCase
             ->method('isValidSession')
             ->will($this->returnValue(true));
 
-        $app['authentication'] = $auth;
+        $app['access_control'] = $auth;
     }
 
     /**
-     * @param \Bolt\Application $app
-     * @param array             $functions Defaults to ['isValidSession']
+     * @param \Silex\Application $app
+     * @param array              $functions Defaults to ['isValidSession']
+     *
+     * @return \Bolt\AccessControl\AccessChecker|\PHPUnit_Framework_MockObject_MockObject
      */
     protected function getAccessCheckerMock($app, $functions = ['isValidSession'])
     {
@@ -180,14 +233,15 @@ abstract class BoltUnitTest extends \PHPUnit_Framework_TestCase
             'Bolt\AccessControl\AccessChecker',
             $functions,
             [
-                $app['storage']->getRepository('Bolt\Storage\Entity\Authtoken'),
-                $app['storage']->getRepository('Bolt\Storage\Entity\Users'),
+                $app['storage.lazy'],
+                $app['request_stack'],
                 $app['session'],
+                $app['dispatcher'],
                 $app['logger.flash'],
                 $app['logger.system'],
                 $app['permissions'],
                 $app['randomgenerator'],
-                $app['authentication.cookie.options']
+                $app['access_control.cookie.options'],
             ]
         );
 
@@ -195,14 +249,35 @@ abstract class BoltUnitTest extends \PHPUnit_Framework_TestCase
     }
 
     /**
-     * @param \Bolt\Application $app
-     * @param array             $functions Defaults to ['login']
+     * @param \Silex\Application $app
+     * @param array              $functions Defaults to ['login']
+     *
+     * @return \PHPUnit_Framework_MockObject_MockObject A mocked \Bolt\AccessControl\Login
      */
     protected function getLoginMock($app, $functions = ['login'])
     {
         $loginMock = $this->getMock('Bolt\AccessControl\Login', $functions, [$app]);
 
         return $loginMock;
+    }
+
+    protected function getCacheMock($path = null)
+    {
+        $app = $this->getApp();
+        if ($path === null) {
+            $path = $app['resources']->getPath('cache');
+        }
+
+        $params = [
+            $path,
+            \Bolt\Cache::EXTENSION,
+            0002,
+            $app['filesystem'],
+        ];
+
+        $cache = $this->getMock('Bolt\Cache', ['flushAll'], $params);
+
+        return $cache;
     }
 
     protected function getTwigHandlers($app)

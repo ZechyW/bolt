@@ -2,7 +2,7 @@
 
 namespace Bolt\Composer\Action;
 
-use Composer\Json\JsonFile;
+use Bolt\Exception\PackageManagerException;
 
 /**
  * Checks for installable, or upgradeable packages.
@@ -14,6 +14,8 @@ final class CheckPackage extends BaseAction
     /**
      * Run a check for package(s).
      *
+     * @throws PackageManagerException
+     *
      * @return array
      */
     public function execute()
@@ -21,39 +23,40 @@ final class CheckPackage extends BaseAction
         $packages = ['updates' => [], 'installs' => []];
 
         // Get known installed packages
-        $rootpack = $this->app['extend.action']['show']->execute('installed');
+        $rootPackage = $this->app['extend.action']['show']->execute('installed');
+
+        /** @var \Bolt\Filesystem\Handler\JsonFile $jsonFile */
+        $jsonFile = $this->getOptions()->composerJson();
 
         // Get the packages that a set as "required" in the JSON file
-        $file = new JsonFile($this->getOption('composerjson'));
-        $json = $file->read();
-        $jsonpack = $json['require'];
+        $json = $jsonFile->parse();
+        $jsonRequires = isset($json['require']) ? (array) $json['require'] : [];
 
-        // Find the packages that are NOT part of the root install yet and mark
-        // them as pending installs
-        if (!empty($jsonpack)) {
-            foreach ($jsonpack as $package => $packageInfo) {
-                if (!array_key_exists($package, $rootpack)) {
-                    $remote = $this->findBestVersionForPackage($package);
+        /**
+         * @var string $packageName
+         * @var string $versionConstraint
+         */
+        foreach ($jsonRequires as $packageName => $versionConstraint) {
+            try {
+                $remote = $this->findBestVersionForPackage($packageName, $versionConstraint, true);
+            } catch (\Exception $e) {
+                $msg = sprintf('%s recieved an error from Composer: %s in %s::%s', __METHOD__, $e->getMessage(), $e->getFile(), $e->getLine());
+                $this->app['logger.system']->critical($msg, ['event' => 'exception', 'exception' => $e]);
 
-                    // If a 'best' version is found, and there is a version mismatch then
-                    // propose as an update. Making the assumption that Composer isn't
-                    // going to offer us an older version.
-                    if (is_array($remote)) {
-                        $packages['installs'][] = $remote;
-                    }
-                }
+                throw new PackageManagerException($e->getMessage(), $e->getCode(), $e);
             }
-        }
+            if (!is_array($remote)) {
+                continue;
+            }
 
-        // For installed packages, see if there is a valid update
-        foreach ($rootpack as $package => $data) {
-            $remote = $this->findBestVersionForPackage($package);
-
-            // If a 'best' version is found, and there is a version mismatch then
-            // propose as an update. Making the assumption that Composer isn't
-            // going to offer us an older version.
-            if (is_array($remote) && ($remote['package']->getVersion() != $data['package']->getVersion())) {
-                $packages['updates'][] = $remote;
+            if (array_key_exists($packageName, $rootPackage)) {
+                $rootVer = isset($rootPackage[$packageName]['versions']) ? $rootPackage[$packageName]['versions'] : false;
+                if ($rootVer && $rootVer !== $remote['package']->getVersion()) {
+                    $packages['updates'][] = $remote;
+                }
+            } else {
+                $packages['installs'][] = $remote;
+                unset($jsonRequires[$packageName]);
             }
         }
 

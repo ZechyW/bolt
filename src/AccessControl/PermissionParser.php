@@ -141,7 +141,8 @@ class PermissionParser
      *
      * @param $what
      *
-     * @throws Exception Parser or lexer errors are thrown as
+     * @throws PermissionLexerException
+     * @throws PermissionParserException
      *
      * @return array A parse tree.
      */
@@ -155,7 +156,7 @@ class PermissionParser
      *
      * @param $query
      *
-     * @throws \Bolt\Exception\PermissionLexerException
+     * @throws PermissionLexerException
      *
      * @return array
      */
@@ -195,7 +196,8 @@ class PermissionParser
 
             // A single permission query. We're using an explicit character
             // whitelist here to match slug characters only.
-            '/^([a-zA-Z_0-9\-]+(:[a-zA-Z_0-9\-]+)*:?)/' => self::T_QUERY];
+            '/^([a-zA-Z_0-9\-]+(:[a-zA-Z_0-9\-]+)*:?)/' => self::T_QUERY,
+        ];
 
         $tokens = [];
         while (!empty($query)) {

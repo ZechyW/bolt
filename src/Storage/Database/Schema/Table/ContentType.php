@@ -1,8 +1,6 @@
 <?php
-namespace Bolt\Storage\Database\Schema\Table;
 
-use Doctrine\DBAL\Platforms\PostgreSqlPlatform;
-use Doctrine\DBAL\Platforms\SqlitePlatform;
+namespace Bolt\Storage\Database\Schema\Table;
 
 class ContentType extends BaseTable
 {
@@ -27,16 +25,22 @@ class ContentType extends BaseTable
         // String, 128, not null, empty default
         'slug'           => 'columnStringNotNull',
         // Text, platform default size
-        'filelist'       => 'columnText',
-        'geolocation'    => 'columnText',
+        'hidden'         => 'columnText',
         'html'           => 'columnText',
-        'image'          => 'columnText',
-        'imagelist'      => 'columnText',
         'markdown'       => 'columnText',
         'select'         => 'columnText',
         'textarea'       => 'columnText',
-        'video'          => 'columnText',
+        // JSON arrays
+        'filelist'       => 'columnJson',
+        'geolocation'    => 'columnJson',
+        'image'          => 'columnJson',
+        'imagelist'      => 'columnJson',
+        'selectmultiple' => 'columnJson',
+        'templatefields' => 'columnJson',
+        'video'          => 'columnJson',
     ];
+    /** @var array */
+    protected $ignoredChanges = [];
 
     /**
      * {@inheritdoc}
@@ -44,17 +48,19 @@ class ContentType extends BaseTable
     protected function addColumns()
     {
         // @codingStandardsIgnoreStart
-        $this->table->addColumn('id',             'integer',  ['autoincrement' => true]);
-        $this->table->addColumn('slug',           'string',   ['length' => 128]);
-        $this->table->addColumn('datecreated',    'datetime', []);
-        $this->table->addColumn('datechanged',    'datetime', []);
-        $this->table->addColumn('datepublish',    'datetime', ['notnull' => false, 'default' => null]);
-        $this->table->addColumn('datedepublish',  'datetime', ['notnull' => false, 'default' => null]);
-        $this->table->addColumn('templatefields', 'text',     ['default' => '']);
-        $this->table->addColumn('username',       'string',   ['length' => 32, 'default' => '', 'notnull' => false]); // We need to keep this around for backward compatibility. For now.
-        $this->table->addColumn('ownerid',        'integer',  ['notnull' => false]);
-        $this->table->addColumn('status',         'string',   ['length' => 32]);
+        $this->table->addColumn('id',             'integer',    ['autoincrement' => true]);
+        $this->table->addColumn('slug',           'string',     ['length' => 128]);
+        $this->table->addColumn('datecreated',    'datetime',   []);
+        $this->table->addColumn('datechanged',    'datetime',   []);
+        $this->table->addColumn('datepublish',    'datetime',   ['notnull' => false, 'default' => null]);
+        $this->table->addColumn('datedepublish',  'datetime',   ['notnull' => false, 'default' => null]);
+        $this->table->addColumn('username',       'string',     ['length' => 32, 'default' => '', 'notnull' => false]); // We need to keep this around for backward compatibility. For now.
+        $this->table->addColumn('ownerid',        'integer',    ['notnull' => false]);
+        $this->table->addColumn('status',         'string',     ['length' => 32]);
         // @codingStandardsIgnoreEnd
+
+        // Add template fields
+        $this->columnJson('templatefields');
     }
 
     /**
@@ -99,7 +105,9 @@ class ContentType extends BaseTable
      */
     public function addCustomFields($fieldName, $type, $addIndex)
     {
-        $this->{$this->typeMap[$type]}($fieldName);
+        if (!$this->table->hasColumn($fieldName)) {
+            $this->{$this->typeMap[$type]}($fieldName);
+        }
 
         if ($addIndex) {
             $this->table->addIndex([$fieldName]);
@@ -139,7 +147,7 @@ class ContentType extends BaseTable
     /**
      * Add a column for decimals.
      *
-     * @deprecated
+     * @deprecated Deprecated since 3.0, to be removed in 4.0.
      *
      * @param string $fieldName
      */
@@ -169,13 +177,27 @@ class ContentType extends BaseTable
     }
 
     /**
+     * Add a column for JSON arrays.
+     *
+     * @param string $fieldName
+     */
+    private function columnJson($fieldName)
+    {
+        if ($this->platform->getName() === 'sqlite') {
+            $this->table->addColumn($fieldName, 'json_array', ['default' => '[]']);
+        } else {
+            $this->table->addColumn($fieldName, 'json_array', ['notnull' => false]);
+        }
+    }
+
+    /**
      * Add a column for a 256 character string with an empty string default.
      *
      * @param string $fieldName
      */
     private function columnStringNormal($fieldName)
     {
-        $this->table->addColumn($fieldName, 'string', ['length' => 256, 'default' => '']);
+        $this->table->addColumn($fieldName, 'string', ['length' => 256, 'default' => '', 'notnull' => false]);
     }
 
     /**
@@ -199,20 +221,6 @@ class ContentType extends BaseTable
      */
     private function columnText($fieldName)
     {
-        $this->table->addColumn($fieldName, 'text', ['default' => $this->getTextDefault()]);
-    }
-
-    /**
-     * Default value for TEXT fields, differs per platform.
-     *
-     * @return string|null
-     */
-    private function getTextDefault()
-    {
-        if ($this->platform instanceof SqlitePlatform || $this->platform instanceof PostgreSqlPlatform) {
-            return '';
-        }
-
-        return null;
+        $this->table->addColumn($fieldName, 'text', ['default' => $this->getTextDefault(), 'notnull' => false]);
     }
 }

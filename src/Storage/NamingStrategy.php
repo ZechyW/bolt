@@ -5,7 +5,7 @@ namespace Bolt\Storage;
 /**
  * Handles Object to DB naming adjustments.
  */
-class NamingStrategy
+class NamingStrategy implements NamingStrategyInterface
 {
     public $prefix = '';
 
@@ -28,7 +28,7 @@ class NamingStrategy
         $className = $this->getRelativeClass($className);
         $className = ltrim(strtolower(preg_replace('/[A-Z]/', '_$0', $className)), '_');
 
-        return $this->prefix.$className;
+        return $this->prefix . $className;
     }
 
     /**
@@ -41,6 +41,7 @@ class NamingStrategy
     public function classToAlias($className)
     {
         $className = $this->getRelativeClass($className);
+
         return ltrim(strtolower(preg_replace('/[A-Z]/', '_$0', $className)), '_');
     }
 

@@ -1,4 +1,5 @@
 <?php
+
 namespace Bolt\Provider;
 
 use Bolt\EventListener as Listener;
@@ -10,29 +11,43 @@ class EventListenerServiceProvider implements ServiceProviderInterface
 {
     public function register(Application $app)
     {
-        $app['listener.general'] = $app->share(function ($app) {
-            return new Listener\GeneralListener($app);
-        });
+        $app['listener.access_control'] = $app->share(
+            function ($app) {
+                return new Listener\AccessControlListener(
+                    $app['filesystem'],
+                    $app['session.storage'],
+                    $app['storage.lazy']
+                );
+            }
+        );
 
-        $app['listener.exception'] = $app->share(function ($app) {
-            $rootPath = $app['resources']->getPath('root');
-            return new Listener\ExceptionListener(
-                $rootPath,
-                $app['render'],
-                $app['logger.system'],
-                $app['session'],
-                $app['config']->get('general/debug', false)
-            );
-        });
+        $app['listener.general'] = $app->share(
+            function ($app) {
+                return new Listener\GeneralListener($app);
+            }
+        );
 
-        $app['listener.not_found'] = $app->share(function ($app) {
-            return new Listener\NotFoundListener(
-                $app['config']->get('general/notfound'),
-                $app['storage.legacy'],
-                $app['templatechooser'],
-                $app['render']
-            );
-        });
+        $app['listener.exception'] = $app->share(
+            function ($app) {
+                return new Listener\ExceptionListener(
+                    $app['config'],
+                    $app['controller.exception'],
+                    $app['logger.system']
+                );
+            }
+        );
+
+        $app['listener.not_found'] = $app->share(
+            function ($app) {
+                return new Listener\NotFoundListener(
+                    $app['config']->get('theme/notfound') ?: $app['config']->get('general/notfound'),
+                    $app['storage.legacy'],
+                    $app['templatechooser'],
+                    $app['twig'],
+                    $app['render']
+                );
+            }
+        );
 
         /*
          * Creating the actual url generator flushes all controllers.
@@ -40,32 +55,48 @@ class EventListenerServiceProvider implements ServiceProviderInterface
          * RedirectListener doesn't use the url generator until kernel.response
          * (way after controllers have been added).
          */
-        $app['listener.redirect'] = $app->share(function ($app) {
-            return new Listener\RedirectListener(
-                $app['session'],
-                $app['url_generator.lazy'],
-                $app['users'],
-                $app['authentication']
-            );
-        });
+        $app['listener.redirect'] = $app->share(
+            function ($app) {
+                return new Listener\RedirectListener(
+                    $app['session'],
+                    $app['url_generator.lazy'],
+                    $app['users'],
+                    $app['access_control']
+                );
+            }
+        );
 
-        $app['listener.session'] = $app->share(function ($app) {
-            $debug = $app['debug'] && $app['config']->get('general/debug_show_loggedoff', false);
-            return new Listener\SessionListener($app['logger.flash'], $debug);
-        });
+        $app['listener.flash_logger'] = $app->share(
+            function ($app) {
+                $debug = $app['debug'] && $app['config']->get('general/debug_show_loggedoff', false);
+                $profilerPrefix = isset($app['profiler.mount_prefix']) ? $app['profiler.mount_prefix'] : null;
 
-        $app['listener.snippet'] = $app->share(function ($app) {
-            return new Listener\SnippetListener(
-                $app['asset.queue.snippet'],
-                $app['config'],
-                $app['resources'],
-                $app['render']
-            );
-        });
+                return new Listener\FlashLoggerListener($app['logger.flash'], $debug, $profilerPrefix);
+            }
+        );
 
-        $app['listener.zone_guesser'] = $app->share(function ($app) {
-            return new Listener\ZoneGuesser($app);
-        });
+        $app['listener.pager'] = $app->share(
+            function ($app) {
+                return new Listener\PagerListener($app['pager']);
+            }
+        );
+
+        $app['listener.snippet'] = $app->share(
+            function ($app) {
+                return new Listener\SnippetListener(
+                    $app['asset.queue.snippet'],
+                    $app['config'],
+                    $app['resources'],
+                    $app['render']
+                );
+            }
+        );
+
+        $app['listener.zone_guesser'] = $app->share(
+            function ($app) {
+                return new Listener\ZoneGuesser($app);
+            }
+        );
     }
 
     public function boot(Application $app)
@@ -73,12 +104,21 @@ class EventListenerServiceProvider implements ServiceProviderInterface
         /** @var EventDispatcherInterface $dispatcher */
         $dispatcher = $app['dispatcher'];
 
-        $dispatcher->addSubscriber($app['listener.general']);
-        $dispatcher->addSubscriber($app['listener.exception']);
-        $dispatcher->addSubscriber($app['listener.not_found']);
-        $dispatcher->addSubscriber($app['listener.snippet']);
-        $dispatcher->addSubscriber($app['listener.redirect']);
-        $dispatcher->addSubscriber($app['listener.session']);
-        $dispatcher->addSubscriber($app['listener.zone_guesser']);
+        $listeners = [
+            'general',
+            'exception',
+            'not_found',
+            'snippet',
+            'redirect',
+            'flash_logger',
+            'zone_guesser',
+            'pager',
+        ];
+
+        foreach ($listeners as $name) {
+            if (isset($app['listener.' . $name])) {
+                $dispatcher->addSubscriber($app['listener.' . $name]);
+            }
+        }
     }
 }

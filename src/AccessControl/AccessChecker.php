@@ -1,13 +1,19 @@
 <?php
 namespace Bolt\AccessControl;
 
+use Bolt\Events\AccessControlEvent;
+use Bolt\Events\AccessControlEvents;
+use Bolt\Exception\AccessControlException;
 use Bolt\Logger\FlashLoggerInterface;
-use Bolt\Storage\Repository\AuthtokenRepository;
-use Bolt\Storage\Repository\UsersRepository;
+use Bolt\Storage\Entity;
+use Bolt\Storage\EntityManagerInterface;
+use Bolt\Storage\Repository;
 use Bolt\Translation\Translator as Trans;
+use Doctrine\DBAL\Exception\TableNotFoundException;
 use Psr\Log\LoggerInterface;
 use RandomLib\Generator;
-use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use UAParser;
 
@@ -18,10 +24,10 @@ use UAParser;
  */
 class AccessChecker
 {
-    /** @var \Bolt\Storage\Repository\AuthtokenRepository */
-    protected $repositoryAuthtoken;
-    /** @var \Bolt\Storage\Repository\UsersRepository */
-    protected $repositoryUsers;
+    /** @var EntityManagerInterface */
+    private $em;
+    /** @var \Symfony\Component\HttpFoundation\RequestStack */
+    protected $requestStack;
     /** @var \Symfony\Component\HttpFoundation\Session\SessionInterface */
     protected $session;
     /** @var \Bolt\Logger\FlashLoggerInterface */
@@ -32,58 +38,46 @@ class AccessChecker
     protected $permissions;
     /** @var \RandomLib\Generator */
     protected $randomGenerator;
+    /** @var EventDispatcherInterface */
+    protected $dispatcher;
     /** @var array */
     protected $cookieOptions;
     /** @var boolean */
-    protected $validsession;
-    /** @var string */
-    protected $remoteIP;
-    /** @var string */
-    protected $userAgent;
-    /** @var string */
-    protected $hostName;
+    protected $validSession;
 
     /**
      * Constructor.
      *
-     * @param AuthtokenRepository  $repositoryAuthtoken
-     * @param UsersRepository      $repositoryUsers
-     * @param SessionInterface     $session
-     * @param FlashLoggerInterface $flashLogger
-     * @param LoggerInterface      $systemLogger
-     * @param Permissions          $permissions
-     * @param array                $cookieOptions
+     * @param EntityManagerInterface   $em
+     * @param RequestStack             $requestStack
+     * @param SessionInterface         $session
+     * @param EventDispatcherInterface $dispatcher
+     * @param FlashLoggerInterface     $flashLogger
+     * @param LoggerInterface          $systemLogger
+     * @param Permissions              $permissions
+     * @param Generator                $randomGenerator
+     * @param array                    $cookieOptions
      */
     public function __construct(
-        AuthtokenRepository $repositoryAuthtoken,
-        UsersRepository $repositoryUsers,
+        EntityManagerInterface $em,
+        RequestStack $requestStack,
         SessionInterface $session,
+        EventDispatcherInterface $dispatcher,
         FlashLoggerInterface $flashLogger,
         LoggerInterface $systemLogger,
         Permissions $permissions,
         Generator $randomGenerator,
         array $cookieOptions
     ) {
-        $this->repositoryAuthtoken = $repositoryAuthtoken;
-        $this->repositoryUsers = $repositoryUsers;
+        $this->em = $em;
+        $this->requestStack = $requestStack;
         $this->session = $session;
+        $this->dispatcher = $dispatcher;
         $this->flashLogger = $flashLogger;
         $this->systemLogger = $systemLogger;
         $this->permissions = $permissions;
         $this->randomGenerator = $randomGenerator;
         $this->cookieOptions = $cookieOptions;
-    }
-
-    /**
-     * Set the request data.
-     *
-     * @param Request $request
-     */
-    public function setRequest(Request $request)
-    {
-        $this->hostName  = $request->getHost();
-        $this->remoteIP  = $request->getClientIp() ?: '127.0.0.1';
-        $this->userAgent = $request->server->get('HTTP_USER_AGENT');
     }
 
     /**
@@ -110,12 +104,18 @@ class AccessChecker
      *
      * @param string $authCookie
      *
+     * @throws AccessControlException
+     *
      * @return boolean
      */
     public function isValidSession($authCookie)
     {
-        if ($this->validsession !== null) {
-            return $this->validsession;
+        if ($authCookie === null) {
+            throw new AccessControlException('Can not validate session with an empty token.');
+        }
+
+        if ($this->validSession !== null) {
+            return $this->validSession;
         }
 
         $check = false;
@@ -127,14 +127,15 @@ class AccessChecker
         }
 
         if (!$check) {
-            // Eithter the session keys don't match, or the session is too old
+            // Either the session keys don't match, or the session is too old
             $check = $this->checkSessionDatabase($authCookie);
         }
 
         if ($check) {
-            return $this->validsession = true;
+            return $this->validSession = true;
         }
-        $this->validsession = false;
+        $this->validSession = false;
+        $this->systemLogger->debug("Clearing sessions for expired or invalid token: $authCookie", ['event' => 'authentication']);
 
         return $this->revokeSession();
     }
@@ -146,11 +147,23 @@ class AccessChecker
      */
     public function revokeSession()
     {
-        $this->flashLogger->info(Trans::__('You have been logged out.'));
+        try {
+            // Only show this flash if there are users in the system.
+            // Not when we're about to get redirected to the "first users" screen.
+            if ($this->getRepositoryUsers()->hasUsers()) {
+                $this->flashLogger->info(Trans::__('general.phrase.access-denied-logged-out'));
+            }
+        } catch (TableNotFoundException $e) {
+            // If we have no table, then we definitely have no users
+        }
 
         // Remove all auth tokens when logging off a user
         if ($sessionAuth = $this->session->get('authentication')) {
-            $this->repositoryAuthtoken->deleteTokens($sessionAuth->getUser()->getUsername());
+            try {
+                $this->getRepositoryAuthtoken()->deleteTokens($sessionAuth->getUser()->getUsername());
+            } catch (TableNotFoundException $e) {
+                // Database tables have been dropped
+            }
         }
 
         $this->session->remove('authentication');
@@ -187,13 +200,17 @@ class AccessChecker
      */
     protected function checkSessionDatabase($authCookie)
     {
-        $userAgent = $this->cookieOptions['browseragent'] ? $this->userAgent : null;
+        $userAgent = $this->cookieOptions['browseragent'] ? $this->getClientUserAgent() : null;
 
-        if (!$authTokenEntity = $this->repositoryAuthtoken->getToken($authCookie, $this->remoteIP, $userAgent)) {
-            return false;
-        }
+        try {
+            if (!$authTokenEntity = $this->getRepositoryAuthtoken()->getToken($authCookie, $this->getClientIp(), $userAgent)) {
+                return false;
+            }
 
-        if (!$databaseUser = $this->repositoryUsers->getUser($authTokenEntity->getUsername())) {
+            if (!$databaseUser = $this->getRepositoryUsers()->getUser($authTokenEntity->getUsername())) {
+                return false;
+            }
+        } catch (TableNotFoundException $e) {
             return false;
         }
 
@@ -203,7 +220,7 @@ class AccessChecker
 
         // Check if user is _still_ allowed to log on.
         if (!$this->permissions->isAllowed('login', $sessionAuth->getUser()->toArray(), null) || !$sessionAuth->isEnabled()) {
-            $this->systemLogger->error('User ' . $sessionAuth->getUser()->getUserName() . ' has been disabled and can not login.', ['event' => 'authentication']);
+            $this->systemLogger->error('User ' . $sessionAuth->getUser()->getUsername() . ' has been disabled and can not login.', ['event' => 'authentication']);
 
             return false;
         }
@@ -232,6 +249,14 @@ class AccessChecker
             return true;
         }
 
+        // Audit the failure
+        $event = new AccessControlEvent($this->requestStack->getCurrentRequest());
+        /** @var Token\Token $sessionAuth */
+        $sessionAuth = $this->session->get('authentication');
+        $userName = $sessionAuth ? $sessionAuth->getToken()->getUsername() : null;
+        $event->setUserName($userName);
+        $this->dispatcher->dispatch(AccessControlEvents::ACCESS_CHECK_FAILURE, $event->setReason(AccessControlEvents::FAILURE_INVALID));
+
         $this->systemLogger->error("Invalidating session: Recalculated session token '$key' doesn't match user provided token '" . $tokenEntity->getToken() . "'", ['event' => 'authentication']);
         $this->systemLogger->info("Automatically logged out user '" . $userEntity->getUsername() . "': Session data didn't match.", ['event' => 'authentication']);
 
@@ -247,8 +272,8 @@ class AccessChecker
     {
         // Parse the user-agents to get a user-friendly Browser, version and platform.
         $parser = UAParser\Parser::create();
-        $this->repositoryAuthtoken->deleteExpiredTokens();
-        $sessions = $this->repositoryAuthtoken->getActiveSessions() ?: [];
+        $this->getRepositoryAuthtoken()->deleteExpiredTokens();
+        $sessions = $this->getRepositoryAuthtoken()->getActiveSessions() ?: [];
 
         foreach ($sessions as &$session) {
             $ua = $parser->parse($session->getUseragent());
@@ -274,10 +299,68 @@ class AccessChecker
             throw new \InvalidArgumentException(__FUNCTION__ . ' required a name and salt to be provided.');
         }
 
-        $token = (string) new Token\Generator($username, $salt, $this->remoteIP, $this->hostName, $this->userAgent, $this->cookieOptions);
+        $token = (string) new Token\Generator($username, $salt, $this->getClientIp(), $this->getClientHost(), $this->getClientUserAgent(), $this->cookieOptions);
 
-        $this->systemLogger->debug("Generating authentication cookie — Username: '$username' Salt: '$salt' IP: '{$this->remoteIP}' Host name: '{$this->hostName}' Agent: '{$this->userAgent}' Result: $token", ['event' => 'authentication']);
+        $this->systemLogger->debug("Generating authentication cookie — Username: '$username' Salt: '$salt' IP: '{$this->getClientIp()}' Host name: '{$this->getClientHost()}' Agent: '{$this->getClientUserAgent()}' Result: $token", ['event' => 'authentication']);
 
         return $token;
+    }
+
+    /**
+     * Return the user's host name.
+     *
+     * @return string
+     */
+    protected function getClientHost()
+    {
+        if ($this->requestStack->getCurrentRequest() === null) {
+            throw new \RuntimeException(sprintf('%s can not be called outside of request cycle', __METHOD__));
+        }
+
+        return $this->requestStack->getCurrentRequest()->getHost();
+    }
+
+    /**
+     * Return the user's IP address.
+     *
+     * @return string
+     */
+    protected function getClientIp()
+    {
+        if ($this->requestStack->getCurrentRequest() === null) {
+            throw new \RuntimeException(sprintf('%s can not be called outside of request cycle', __METHOD__));
+        }
+
+        return $this->requestStack->getCurrentRequest()->getClientIp() ?: '127.0.0.1';
+    }
+
+    /**
+     * Return the user's browser User Agent.
+     *
+     * @return string
+     */
+    protected function getClientUserAgent()
+    {
+        if ($this->requestStack->getCurrentRequest() === null) {
+            throw new \RuntimeException(sprintf('%s can not be called outside of request cycle', __METHOD__));
+        }
+
+        return $this->requestStack->getCurrentRequest()->server->get('HTTP_USER_AGENT');
+    }
+
+    /**
+     * @return Repository\UsersRepository
+     */
+    protected function getRepositoryUsers()
+    {
+        return $this->em->getRepository(Entity\Users::class);
+    }
+
+    /**
+     * @return Repository\AuthtokenRepository
+     */
+    protected function getRepositoryAuthtoken()
+    {
+        return $this->em->getRepository(Entity\Authtoken::class);
     }
 }

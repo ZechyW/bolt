@@ -2,14 +2,13 @@
 
 namespace Bolt\Twig;
 
-use Bolt\Controller\Zone;
+use Bolt;
 use Silex;
-use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * The class for Bolt' Twig tags, functions and filters.
  */
-class TwigExtension extends \Twig_Extension
+class TwigExtension extends \Twig_Extension implements \Twig_Extension_GlobalsInterface
 {
     /** @var \Silex\Application */
     private $app;
@@ -41,36 +40,44 @@ class TwigExtension extends \Twig_Extension
     {
         $safe = ['is_safe' => ['html']];
         $env  = ['needs_environment' => true];
+        $deprecated = ['deprecated' => true];
 
         return [
             // @codingStandardsIgnoreStart
             new \Twig_SimpleFunction('__',                 [$this, 'trans'],       $safe),
             new \Twig_SimpleFunction('backtrace',          [$this, 'printBacktrace']),
-            new \Twig_SimpleFunction('cachehash',          [$this, 'cacheHash'],   $safe),
+            new \Twig_SimpleFunction('buid',               [$this, 'buid'],        $safe),
+            new \Twig_SimpleFunction('canonical',          [$this, 'canonical']),
+            new \Twig_SimpleFunction('countwidgets',       [$this, 'countWidgets'],  $safe),
             new \Twig_SimpleFunction('current',            [$this, 'current']),
             new \Twig_SimpleFunction('data',               [$this, 'addData']),
             new \Twig_SimpleFunction('dump',               [$this, 'printDump']),
             new \Twig_SimpleFunction('excerpt',            [$this, 'excerpt'],     $safe),
-            new \Twig_SimpleFunction('fancybox',           [$this, 'popup'],       $safe), // "Fancybox" is deprecated.
+            new \Twig_SimpleFunction('fancybox',           [$this, 'popup'],       $safe + $deprecated + ['alternative' => 'popup']),
+            new \Twig_SimpleFunction('fields',             [$this, 'fields'],      $env + $safe),
             new \Twig_SimpleFunction('file_exists',        [$this, 'fileExists']),
             new \Twig_SimpleFunction('firebug',            [$this, 'printFirebug']),
-            new \Twig_SimpleFunction('first',              [$this, 'first']),
+            new \Twig_SimpleFunction('first',              'twig_first',           $env + $deprecated),
             new \Twig_SimpleFunction('getuser',            [$this, 'getUser']),
             new \Twig_SimpleFunction('getuserid',          [$this, 'getUserId']),
+            new \Twig_SimpleFunction('getwidgets',         [$this, 'getWidgets'],  $safe),
+            new \Twig_SimpleFunction('haswidgets',         [$this, 'hasWidgets'],  $safe),
+            new \Twig_SimpleFunction('hattr',              [$this, 'hattr'],       $safe),
+            new \Twig_SimpleFunction('hclass',             [$this, 'hclass'],      $safe),
             new \Twig_SimpleFunction('htmllang',           [$this, 'htmlLang']),
             new \Twig_SimpleFunction('image',              [$this, 'image']),
             new \Twig_SimpleFunction('imageinfo',          [$this, 'imageInfo']),
             new \Twig_SimpleFunction('isallowed',          [$this, 'isAllowed']),
-            new \Twig_SimpleFunction('ischangelogenabled', [$this, 'isChangelogEnabled']),
+            new \Twig_SimpleFunction('ischangelogenabled', [$this, 'isChangelogEnabled'], $deprecated),
             new \Twig_SimpleFunction('ismobileclient',     [$this, 'isMobileClient']),
-            new \Twig_SimpleFunction('last',               [$this, 'last']),
-            new \Twig_SimpleFunction('listcontent',        [$this, 'listContent']),
+            new \Twig_SimpleFunction('last',               'twig_last',            $env + $deprecated),
+            new \Twig_SimpleFunction('link',               [$this, 'link'],        $safe),
             new \Twig_SimpleFunction('listtemplates',      [$this, 'listTemplates']),
             new \Twig_SimpleFunction('markdown',           [$this, 'markdown'],    $safe),
-            new \Twig_SimpleFunction('menu',               [$this, 'menu'],        array_merge($env, $safe)),
+            new \Twig_SimpleFunction('menu',               [$this, 'menu'],        $env + $safe),
             new \Twig_SimpleFunction('pager',              [$this, 'pager'],       $env),
             new \Twig_SimpleFunction('popup',              [$this, 'popup'],       $safe),
-            new \Twig_SimpleFunction('print',              [$this, 'printDump']),           // Deprecated.
+            new \Twig_SimpleFunction('print',              [$this, 'printDump'],   $deprecated + ['alternative' => 'dump']),
             new \Twig_SimpleFunction('randomquote',        [$this, 'randomQuote'], $safe),
             new \Twig_SimpleFunction('redirect',           [$this, 'redirect'],    $safe),
             new \Twig_SimpleFunction('request',            [$this, 'request']),
@@ -78,9 +85,10 @@ class TwigExtension extends \Twig_Extension
             new \Twig_SimpleFunction('stacked',            [$this, 'stacked']),
             new \Twig_SimpleFunction('stackitems',         [$this, 'stackItems']),
             new \Twig_SimpleFunction('thumbnail',          [$this, 'thumbnail']),
-            new \Twig_SimpleFunction('token',              [$this, 'token']),
-            new \Twig_SimpleFunction('trimtext',           [$this, 'trim'],        $safe),  // Deprecated.
-            new \Twig_SimpleFunction('widget',             [$this, 'widget'])
+            new \Twig_SimpleFunction('token',              [$this, 'token'],       $deprecated + ['alternative' => 'csrf_token']),
+            new \Twig_SimpleFunction('trimtext',           [$this, 'trim'],        $safe + $deprecated + ['alternative' => 'excerpt']),
+            new \Twig_SimpleFunction('unique',             [$this, 'unique'],      $safe),
+            new \Twig_SimpleFunction('widgets',            [$this, 'widgets'],      $safe),
             // @codingStandardsIgnoreEnd
         ];
     }
@@ -88,22 +96,21 @@ class TwigExtension extends \Twig_Extension
     public function getFilters()
     {
         $safe = ['is_safe' => ['html']];
+        $env  = ['needs_environment' => true];
+        $deprecated = ['deprecated' => true];
 
         return [
             // @codingStandardsIgnoreStart
             new \Twig_SimpleFilter('__',             [$this, 'trans']),
-            new \Twig_SimpleFilter('cachehash',      [$this, 'cacheHash'],         $safe),
             new \Twig_SimpleFilter('current',        [$this, 'current']),
             new \Twig_SimpleFilter('editable',       [$this, 'editable'],          $safe),
             new \Twig_SimpleFilter('excerpt',        [$this, 'excerpt'],           $safe),
-            new \Twig_SimpleFilter('fancybox',       [$this, 'popup'],             $safe), // "Fancybox" is deprecated.
-            new \Twig_SimpleFilter('first',          [$this, 'first']),
+            new \Twig_SimpleFilter('fancybox',       [$this, 'popup'],             $safe + $deprecated + ['alternative' => 'popup']),
             new \Twig_SimpleFilter('image',          [$this, 'image']),
             new \Twig_SimpleFilter('imageinfo',      [$this, 'imageInfo']),
             new \Twig_SimpleFilter('json_decode',    [$this, 'jsonDecode']),
-            new \Twig_SimpleFilter('last',           [$this, 'last']),
-            new \Twig_SimpleFilter('localdate',      [$this, 'localeDateTime'],    $safe),
-            new \Twig_SimpleFilter('localedatetime', [$this, 'localeDateTime'],    $safe), // Deprecated
+            new \Twig_SimpleFilter('localdate',      [$this, 'localeDateTime'],    $safe + $deprecated + ['alternative' => 'localedatetime']),
+            new \Twig_SimpleFilter('localedatetime', [$this, 'localeDateTime'],    $safe),
             new \Twig_SimpleFilter('loglevel',       [$this, 'logLevel']),
             new \Twig_SimpleFilter('markdown',       [$this, 'markdown'],          $safe),
             new \Twig_SimpleFilter('order',          [$this, 'order']),
@@ -116,11 +123,11 @@ class TwigExtension extends \Twig_Extension
             new \Twig_SimpleFilter('shy',            [$this, 'shy'],               $safe),
             new \Twig_SimpleFilter('slug',           [$this, 'slug']),
             new \Twig_SimpleFilter('thumbnail',      [$this, 'thumbnail']),
-            new \Twig_SimpleFilter('trimtext',       [$this, 'trim'],              $safe), // Deprecated.
+            new \Twig_SimpleFilter('trimtext',       [$this, 'trim'],              $safe + $deprecated + ['alternative' => 'excerpt']),
             new \Twig_SimpleFilter('tt',             [$this, 'decorateTT'],        $safe),
             new \Twig_SimpleFilter('twig',           [$this, 'twig'],              $safe),
-            new \Twig_SimpleFilter('ucfirst',        [$this, 'ucfirst']),
-            new \Twig_SimpleFilter('ymllink',        [$this, 'ymllink'],           $safe)
+            new \Twig_SimpleFilter('ucfirst',        'twig_capitalize_string_filter', $env + $deprecated + ['alternative' => 'capitalize']),
+            new \Twig_SimpleFilter('ymllink',        [$this, 'ymllink'],           $safe),
             // @codingStandardsIgnoreEnd
         ];
     }
@@ -128,41 +135,31 @@ class TwigExtension extends \Twig_Extension
     public function getTests()
     {
         return [
-            new \Twig_SimpleTest('json', [$this, 'testJson'])
+            new \Twig_SimpleTest('json', [$this, 'testJson']),
         ];
     }
 
+    /**
+     * {@inheritdoc}
+     *
+     * As of Twig 2.x, the ability to register a global variable after runtime
+     * or the extensions have been initialized will not be possible any longer,
+     * but changing the value of an already registered global is possible.
+     */
     public function getGlobals()
     {
-        /** @var \Bolt\Config $config */
-        $config = $this->app['config'];
-        /** @var \Bolt\Users $users */
-        $users = $this->app['users'];
-        /** @var \Bolt\Configuration\ResourceManager $resources */
-        $resources = $this->app['resources'];
-
-        $configVal = $this->safe ? null : $config;
-        $usersVal = $this->safe ? null : $users->getUsers();
-
-        $zone = null;
-        /** @var RequestStack $requestStack */
-        $requestStack = $this->app['request_stack'];
-        if ($request = $requestStack->getCurrentRequest()) {
-            $zone = Zone::get($request);
-        }
-
-        // Structured to allow PHPStorm's SymfonyPlugin to provide code completion
         return [
-            'bolt_name'    => $this->app['bolt_name'],
-            'bolt_version' => $this->app['bolt_version'],
-            'frontend'     => $zone === Zone::FRONTEND,
-            'backend'      => $zone === Zone::BACKEND,
-            'async'        => $zone === Zone::ASYNC,
-            'paths'        => $resources->getPaths(),
-            'theme'        => $config->get('theme'),
-            'user'         => $users->getCurrentUser(),
-            'users'        => $usersVal,
-            'config'       => $configVal,
+            'bolt_name'    => null,
+            'bolt_version' => null,
+            'bolt_stable'  => null,
+            'frontend'     => null,
+            'backend'      => null,
+            'async'        => null,
+            'paths'        => null,
+            'theme'        => null,
+            'user'         => null,
+            'users'        => null,
+            'config'       => null,
         ];
     }
 
@@ -171,6 +168,7 @@ class TwigExtension extends \Twig_Extension
         $parsers = [];
         if (!$this->safe) {
             $parsers[] = new SetcontentTokenParser();
+            $parsers[] = new SwitchTokenParser();
         }
 
         return $parsers;
@@ -185,11 +183,27 @@ class TwigExtension extends \Twig_Extension
     }
 
     /**
-     * @see \Bolt\Twig\Handler\HtmlHandler::cacheHash()
+     * @see \Bolt\Twig\Handler\AdminHandler::buid()
      */
-    public function cacheHash($fileName)
+    public function buid()
     {
-        return $this->handlers['html']->cacheHash($fileName);
+        return $this->handlers['admin']->buid();
+    }
+
+    /**
+     * @see \Bolt\Twig\Handler\RoutingHandler::canonical()
+     */
+    public function canonical()
+    {
+        return $this->handlers['routing']->canonical();
+    }
+
+    /**
+     * @see \Bolt\Twig\Handler\WidgetHandler::countWidgets()
+     */
+    public function countWidgets($location = null, $zone = 'frontend')
+    {
+        return $this->handlers['widget']->countWidgets($location, $zone);
     }
 
     /**
@@ -219,9 +233,17 @@ class TwigExtension extends \Twig_Extension
     /**
      * @see \Bolt\Twig\Handler\RecordHandler::excerpt()
      */
-    public function excerpt($content, $length = 200)
+    public function excerpt($content, $length = 200, $focus = null)
     {
-        return $this->handlers['record']->excerpt($content, $length);
+        return $this->handlers['record']->excerpt($content, $length, $focus);
+    }
+
+    /**
+     * @see \Bolt\Twig\Handler\RecordHandler::fields()
+     */
+    public function fields(\Twig_Environment $env, $record = null, $common = true, $extended = false, $repeaters = true, $templatefields = true, $template = '_sub_fields.twig', $exclude = null, $skip_uses = true)
+    {
+        return $this->handlers['record']->fields($env, $record, $common, $extended, $repeaters, $templatefields, $template, $exclude, $skip_uses);
     }
 
     /**
@@ -230,14 +252,6 @@ class TwigExtension extends \Twig_Extension
     public function fileExists($fn)
     {
         return $this->handlers['utils']->fileExists($fn, $this->safe);
-    }
-
-    /**
-     * @see \Bolt\Twig\Handler\ArrayHandler::first()
-     */
-    public function first($array)
-    {
-        return $this->handlers['array']->first($array);
     }
 
     /**
@@ -257,6 +271,38 @@ class TwigExtension extends \Twig_Extension
     }
 
     /**
+     * @see \Bolt\Twig\Handler\WidgetHandler::getWidgets()
+     */
+    public function getWidgets()
+    {
+        return $this->handlers['widget']->getWidgets();
+    }
+
+    /**
+     * @see \Bolt\Twig\Handler\WidgetHandler::hasWidgets()
+     */
+    public function hasWidgets($location = null, $zone = 'frontend')
+    {
+        return $this->handlers['widget']->hasWidgets($location, $zone);
+    }
+
+    /**
+     * @see \Bolt\Twig\Handler\AdminHandler::hattr()
+     */
+    public function hattr($attributes)
+    {
+        return $this->handlers['admin']->hattr($attributes);
+    }
+
+    /**
+     * @see \Bolt\Twig\Handler\AdminHandler::hclass()
+     */
+    public function hclass($classes)
+    {
+        return $this->handlers['admin']->hclass($classes);
+    }
+
+    /**
      * @see \Bolt\Twig\Handler\HtmlHandler::htmlLang()
      */
     public function htmlLang()
@@ -267,7 +313,7 @@ class TwigExtension extends \Twig_Extension
     /**
      * @see \Bolt\Twig\Handler\ImageHandler::image()
      */
-    public function image($filename, $width = '', $height = '', $crop = '')
+    public function image($filename = null, $width = null, $height = null, $crop = null)
     {
         return $this->handlers['image']->image($filename, $width, $height, $crop);
     }
@@ -289,6 +335,7 @@ class TwigExtension extends \Twig_Extension
     }
 
     /**
+     * @deprecated Deprecated since 3.0, to be removed in 4.0. Just use config instead.
      * @see \Bolt\Twig\Handler\AdminHandler::isChangelogEnabled()
      */
     public function isChangelogEnabled()
@@ -313,19 +360,11 @@ class TwigExtension extends \Twig_Extension
     }
 
     /**
-     * @see \Bolt\Twig\Handler\ArrayHandler::last()
+     * @see \Bolt\Twig\Handler\HtmlHandler::link()
      */
-    public function last($array)
+    public function link($location, $label = '[link]')
     {
-        return $this->handlers['array']->last($array);
-    }
-
-    /**
-     * @see \Bolt\Twig\Handler\RecordHandler::listContent()
-     */
-    public function listContent($contenttype, $relationoptions, $content)
-    {
-        return $this->handlers['record']->listContent($contenttype, $relationoptions, $content);
+        return $this->handlers['html']->link($location, $label);
     }
 
     /**
@@ -387,7 +426,7 @@ class TwigExtension extends \Twig_Extension
     /**
      * @see \Bolt\Twig\Handler\ImageHandler::popup()
      */
-    public function popup($filename = '', $width = 100, $height = 100, $crop = '', $title = '')
+    public function popup($filename = null, $width = null, $height = null, $crop = null, $title = null)
     {
         return $this->handlers['image']->popup($filename, $width, $height, $crop, $title);
     }
@@ -409,11 +448,13 @@ class TwigExtension extends \Twig_Extension
     }
 
     /**
-     * @see \Bolt\Twig\Handler\UtilsHandler::printDump()
+     * Just for safe_twig. Main twig overrides this function.
+     *
+     * @see \Bolt\Provider\TwigServiceProvider
      */
-    public function printDump($var)
+    public function printDump()
     {
-        return $this->handlers['utils']->printDump($var, $this->safe);
+        return null;
     }
 
     /**
@@ -467,7 +508,7 @@ class TwigExtension extends \Twig_Extension
     /**
      * @see \Bolt\Twig\Handler\ImageHandler::showImage()
      */
-    public function showImage($filename = '', $width = 0, $height = 0, $crop = '')
+    public function showImage($filename = null, $width = null, $height = null, $crop = null)
     {
         return $this->handlers['image']->showImage($filename, $width, $height, $crop);
     }
@@ -523,9 +564,9 @@ class TwigExtension extends \Twig_Extension
     /**
      * @see \Bolt\Twig\Handler\ImageHandler::thumbnail()
      */
-    public function thumbnail($filename, $width = '', $height = '', $zoomcrop = 'crop')
+    public function thumbnail($filename = null, $width = null, $height = null, $crop = null)
     {
-        return $this->handlers['image']->thumbnail($filename, $width, $height, $zoomcrop);
+        return $this->handlers['image']->thumbnail($filename, $width, $height, $crop);
     }
 
     /**
@@ -548,11 +589,11 @@ class TwigExtension extends \Twig_Extension
     }
 
     /**
-     * @see \Bolt\Twig\Handler\RecordHandler::trim()
+     * @deprecated Deprecated since 3.0, to be removed in 4.0. Use {@see \Bolt\Twig\TwigExtension::excerpt} instead
      */
     public function trim($content, $length = 200)
     {
-        return $this->handlers['record']->trim($content, $length);
+        return $this->excerpt($content, $length);
     }
 
     /**
@@ -564,19 +605,19 @@ class TwigExtension extends \Twig_Extension
     }
 
     /**
-     * @see \Bolt\Twig\Handler\TextHandler::ucfirst()
+     * @see \Bolt\Twig\Handler\ArrayHandler::unique()
      */
-    public function ucfirst($str)
+    public function unique($array1, $array2)
     {
-        return $this->handlers['text']->ucfirst($str);
+        return $this->handlers['array']->unique($array1, $array2);
     }
 
     /**
-     * @see \Bolt\Twig\Handler\AdminHandler::widget()
+     * @see \Bolt\Twig\Handler\WidgetHandler::widgets()
      */
-    public function widget($type = '', $location = '')
+    public function widgets($location = null, $zone = 'frontend', $wrapper = 'widgetwrapper.twig')
     {
-        return $this->handlers['admin']->widget($type, $location);
+        return $this->handlers['widget']->widgets($location, $zone, $wrapper);
     }
 
     /**

@@ -90,36 +90,55 @@ $navbar-padding-horizontal: 0;
 @import "modules/popover";
 @import "modules/dashboard";
 @import "modules/aside";
-@import "modules/stack";
 @import "modules/forms";
-@import "modules/editcontent";
 @import "modules/liveeditor";
 @import "modules/login";
 @import "modules/extend";
+@import "modules/omnisearch";
+@import "modules/widgets";
 
 /**
- * Fieldsets.
+ * Bolt User Interface Components.
  */
-@import "fieldsets/generic";
+@import "buic/browser";
+@import "buic/checkbox";
+@import "buic/listing";
+@import "buic/modal";
+@import "buic/moment";
+@import "buic/progress";
+@import "buic/select";
+@import "buic/stack";
+
+/**
+ * Editcontent.
+ */
+@import "editcontent/legacy";
+@import "editcontent/fieldset";
+@import "editcontent/field";
 //
-@import "fieldsets/checkbox";
-@import "fieldsets/date";
-@import "fieldsets/datetime";
-@import "fieldsets/file";
-@import "fieldsets/filelist";
-@import "fieldsets/float";
-@import "fieldsets/geolocation";
-@import "fieldsets/html";
-@import "fieldsets/image";
-@import "fieldsets/imagelist";
-@import "fieldsets/integer";
-@import "fieldsets/markdown";
-@import "fieldsets/select";
-@import "fieldsets/slug";
-@import "fieldsets/templateselect";
-@import "fieldsets/text";
-@import "fieldsets/textarea";
-@import "fieldsets/video";
+@import "editcontent/fields/categories";
+@import "editcontent/fields/checkbox";
+@import "editcontent/fields/date";
+@import "editcontent/fields/datetime";
+@import "editcontent/fields/file";
+@import "editcontent/fields/filelist";
+@import "editcontent/fields/float";
+@import "editcontent/fields/geolocation";
+@import "editcontent/fields/grouping";
+@import "editcontent/fields/html";
+@import "editcontent/fields/image";
+@import "editcontent/fields/imagelist";
+@import "editcontent/fields/integer";
+@import "editcontent/fields/markdown";
+@import "editcontent/fields/relationships";
+@import "editcontent/fields/repeater";
+@import "editcontent/fields/select";
+@import "editcontent/fields/slug";
+@import "editcontent/fields/tags";
+@import "editcontent/fields/templateselect";
+@import "editcontent/fields/text";
+@import "editcontent/fields/textarea";
+@import "editcontent/fields/video";
 
 /**
  * The leftover styles.

@@ -108,7 +108,7 @@ class YamlHelper extends \Codeception\Module
      *             change-ownership: [ ]
      * ```
      *
-     * @return string
+     * @return array
      */
     private function getBasePermissions()
     {
@@ -133,7 +133,7 @@ class YamlHelper extends \Codeception\Module
         $permissions['contenttypes'] = [
             'pages'     => [
                 'create'           => ['editor'],
-                'edit'             => ['editor'],
+                'edit'             => ['editor', 'author'],
                 'change-ownership' => ['owner']
             ],
             'entries'   => [
@@ -177,11 +177,11 @@ class YamlHelper extends \Codeception\Module
      *
      * @return string
      */
-    public function getUpdatedContenttypes()
+    public function getUpdatedContentTypes()
     {
-        $contenttypes = $this->readYaml('contenttypes.yml');
+        $contentTypes = $this->readYaml('contenttypes.yml');
 
-        $contenttypes['resources'] = [
+        $contentTypes['resources'] = [
             'name'          => 'Resources',
             'singular_name' => 'Resource',
             'fields'        => [
@@ -204,7 +204,7 @@ class YamlHelper extends \Codeception\Module
             'viewless'          => true
         ];
 
-        return $this->getYamlString($contenttypes, 4);
+        return $this->getYamlString($contentTypes, 4);
     }
 
     /**
@@ -246,13 +246,19 @@ class YamlHelper extends \Codeception\Module
     {
         $filename = INSTALL_ROOT . '/app/config/routing.yml';
 
-        $routing = file_get_contents($filename) . "\n";
-        $routing .= "pagebinding:\n";
-        $routing .= "    path: /{slug}\n";
-        $routing .= "    defaults: { _controller: 'Bolt\Controllers\Frontend::record', 'contenttypeslug': 'page' }\n";
-        $routing .= "    contenttype: pages\n";
+        $routing = [
+            'pagebinding:',
+            '    path: /{slug}',
+            '    defaults:',
+            '        _controller: controller.frontend:record',
+            '        contenttypeslug: page',
+            '    contenttype: pages',
+            '',
+            file_get_contents($filename),
+            '',
+        ];
 
-        return $routing;
+        return implode("\n", $routing);
     }
 
     /**

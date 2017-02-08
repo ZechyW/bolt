@@ -1,6 +1,7 @@
 <?php
 namespace Bolt\Tests\Controller;
 
+use Bolt\Configuration\Validation\Validator;
 use Bolt\Tests\BoltUnitTest;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -18,6 +19,7 @@ abstract class ControllerUnitTest extends BoltUnitTest
     protected function setRequest(Request $request)
     {
         $this->getApp()->offsetSet('request', $request);
+        $this->getApp()->offsetGet('request_stack')->push($request);
     }
 
     /**
@@ -28,11 +30,12 @@ abstract class ControllerUnitTest extends BoltUnitTest
         return $this->getApp()->offsetGet('request');
     }
 
-    protected function getApp()
+    protected function getApp($boot = true)
     {
         if (!$this->app) {
             $this->app = $this->makeApp();
         }
+
         return $this->app;
     }
 
@@ -40,7 +43,15 @@ abstract class ControllerUnitTest extends BoltUnitTest
     {
         $app = parent::makeApp();
         $app->initialize();
-        $app['twig.loader'] = new \Twig_Loader_Chain([new \Twig_Loader_String()]);
+
+        $verifier = new Validator(
+            $app['controller.exception'],
+            $app['config'],
+            $app['resources'],
+            $app['logger.flash']
+        );
+        $verifier->checks();
+
         $app->boot();
 
         return $app;

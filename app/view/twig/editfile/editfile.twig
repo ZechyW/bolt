@@ -1,6 +1,6 @@
-{# Page: NavSecondary > Configuration > Main configuration | Contenttypes | Taxonomy | ... #}
+{# Page: NavSecondary > Configuration > Main configuration | ContentTypes | Taxonomy | ... #}
 
-{% extends '_base/_page-nav.twig' %}
+{% extends '@bolt/_base/_page-nav.twig' %}
 
 {% block page_nav 'Settings/Configuration' %}
 
@@ -10,12 +10,13 @@
 
 {% block page_main %}
 
-    {% import '_macro/_macro.twig' as macro %}
-    {% from '_macro/_files_path.twig' import files_path %}
+    {% import '@bolt/_macro/_macro.twig' as macro %}
+    {% from '@bolt/_buic/_moment.twig' import buic_moment %}
+    {% from '@bolt/_macro/_files_path.twig' import files_path %}
 
     {{ data('editcontent.msg', {
-        'change_quit': __('You have unfinished changes on this page. If you continue without saving, you will lose these changes.'),
-        'saving':      __('Saving …')
+        'change_quit': __('general.phrase.warning-unfinished-changes-loss'),
+        'saving':      __('general.phrase.saving-ellipsis')
     }) }}
 
     {% set attr_text = {
@@ -29,8 +30,10 @@
 
     <div class="row">
         <div class="col-xs-12">
+
             {{ files_path(context.pathsegments, context.namespace, {'path': '', 'namespace': context.namespace}) }}
 
+            {{ widgets('editfile_below_header', 'backend') }}
 
             <form method="post" class="form-inline" id="editfile" autocomplete="off">
                 {{ form_widget(context.form._token) }}
@@ -62,40 +65,42 @@
                   </div>
                 </div>
 
-            <p class='lastsaved' style='padding-top: 12px;'>
-                {{ __('Saved on:') }}
-                <strong>{{ context.datechanged|localdate("%b %e, %H:%M") }}</strong>
-                <small>({{ macro.datetime(context.datechanged) }})</small>
+            <p class="lastsaved" style="padding-top: 12px;">
+                {{ __('general.phrase.saved-on-colon') }}
+                <strong>{{ context.datechanged|localedatetime("%c") }}</strong>
+                ({{ buic_moment(context.datechanged) }})
             </p>
 
             </form>
+
+            {{ widgets('editfile_bottom', 'backend') }}
+
         </div>
     </div>
 
-    {% if not ismobileclient() %}
-        {% if context.filetype in ['twig', 'html', 'htm'] %}
-            {% set codemirror = ['xml', 'javascript', 'css', 'htmlmixed'] %}
-        {% elseif context.filetype == "php" %}
-            {% set codemirror = ['matchbrackets', 'javascript', 'css', 'htmlmixed', 'clike', 'php'] %}
-        {% elseif context.filetype == "yml" %}
-            {% set codemirror = ['yaml'] %}
-        {% elseif context.filetype == "md" %}
-            {% set codemirror = ['markdown'] %}
-        {% elseif context.filetype in ['css', 'less'] %}
-            {% set codemirror = 'css' %}
-        {% elseif context.filetype == "js" %}
-            {% set codemirror = ['javascript'] %}
-        {% else %}
-            {% set codemirror = [] %}
-        {% endif %}
-
-        {# use the files includes in ckeditor/codemirror plugin, instead of duplicating files. #}
-        <link rel="stylesheet" property="stylesheet" href="{{ paths.app }}view/js/ckeditor/plugins/codemirror/css/codemirror.min.css">
-        <script src="{{ paths.app }}view/js/ckeditor/ckeditor.js"></script>
-        <script src="{{ paths.app }}view/js/ckeditor/plugins/codemirror/js/codemirror.min.js"></script>
-        {% for file in codemirror %}
-            <script src="{{ paths.app }}view/js/ckeditor/plugins/codemirror/plugins/{{ file }}.min.js"></script>
-        {% endfor %}
+    {% if context.filetype in ['twig', 'html', 'htm'] %}
+        {% set codemirror = ['xml', 'javascript', 'css', 'htmlmixed'] %}
+    {% elseif context.filetype == "php" %}
+        {% set codemirror = ['matchbrackets', 'javascript', 'css', 'htmlmixed', 'clike', 'php'] %}
+    {% elseif context.filetype == "yml" %}
+        {% set codemirror = ['yaml'] %}
+    {% elseif context.filetype == "md" %}
+        {% set codemirror = ['markdown'] %}
+    {% elseif context.filetype in ['css', 'less'] %}
+        {% set codemirror = ['css'] %}
+    {% elseif context.filetype == "js" %}
+        {% set codemirror = ['javascript'] %}
+    {% else %}
+        {% set codemirror = [] %}
     {% endif %}
+
+    {# use the files includes in ckeditor/codemirror plugin, instead of duplicating files. #}
+    <link rel="stylesheet" property="stylesheet" href="{{ asset('js/ckeditor/plugins/codemirror/css/codemirror.min.css', 'bolt') }}">
+    <script src="{{ asset('js/ckeditor/ckeditor.js', 'bolt') }}"></script>
+    <script src="{{ asset('js/ckeditor/plugins/codemirror/js/codemirror.min.js', 'bolt') }}"></script>
+    <script src="{{ asset('js/ckeditor/plugins/codemirror/js/codemirror.addons.search.min.js', 'bolt') }}"></script>
+    {% for file in codemirror %}
+        <script src="{{ asset('js/ckeditor/plugins/codemirror/plugins/' ~ file ~ '.min.js', 'bolt') }}"></script>
+    {% endfor %}
 
 {% endblock page_main %}

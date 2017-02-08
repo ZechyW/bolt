@@ -17,7 +17,8 @@ class LogTrim extends BaseCommand
     {
         $this
             ->setName('log:trim')
-            ->setDescription('Trim the system & change logs.');
+            ->setDescription('Trim the system & change logs.')
+        ;
     }
 
     /**
@@ -29,6 +30,6 @@ class LogTrim extends BaseCommand
         $this->app['logger.manager']->trim('change');
 
         $this->auditLog(__CLASS__, 'System system & change logs trimmed');
-        $output->writeln("<info>System & change logs trimmed!</info>");
+        $output->writeln('<info>System & change logs trimmed!</info>');
     }
 }

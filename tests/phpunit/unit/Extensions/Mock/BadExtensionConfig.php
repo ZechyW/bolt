@@ -10,11 +10,6 @@ class BadExtensionConfig extends Extension
 {
     public function getConfig()
     {
-        throw new \Exception("BadExtensionConfig", 1);
-    }
-
-    public function getName()
-    {
-        return "badextensionconfig";
+        throw new \Exception('BadExtensionConfig', 1);
     }
 }

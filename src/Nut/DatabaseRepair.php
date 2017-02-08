@@ -17,7 +17,8 @@ class DatabaseRepair extends BaseCommand
     {
         $this
             ->setName('database:update')
-            ->setDescription('Repair and/or update the database.');
+            ->setDescription('Repair and/or update the database.')
+        ;
     }
 
     /**
@@ -25,7 +26,7 @@ class DatabaseRepair extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $response = $this->app['schema']->repairTables();
+        $response = $this->app['schema']->update();
 
         if (!$response->hasResponses()) {
             $output->writeln('<info>Your database is already up to date.</info>');

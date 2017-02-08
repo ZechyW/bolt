@@ -2,12 +2,12 @@
 
 namespace Bolt\Twig\Handler;
 
-use Bolt\Application;
-use Bolt\Content;
 use Bolt\Helpers\Html;
 use Bolt\Helpers\Str;
+use Bolt\Legacy\Content;
 use Maid\Maid;
 use Silex;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Bolt specific Twig functions and filters for HTML
@@ -28,26 +28,6 @@ class HtmlHandler
     }
 
     /**
-     * Take a file name and add a HTML query paramter with a unique hash based
-     * on the site's salt value and the file modification time, or file name
-     * if the file can't be found by the function.
-     *
-     * @param string $fileName
-     *
-     * @return string
-     */
-    public function cacheHash($fileName)
-    {
-        $fullPath = $this->app['resources']->getPath('root') . '/' . $fileName;
-
-        if (is_readable($fullPath)) {
-            return "$fileName?v=" . $this->app['asset.file.hash']($fullPath);
-        } elseif (is_readable($fileName)) {
-            return "$fileName?v=" . $this->app['asset.file.hash']($fileName);
-        }
-    }
-
-    /**
      * Transforms plain text to HTML
      *
      * @see Bolt\Helpers\Html::decorateTT()
@@ -64,10 +44,10 @@ class HtmlHandler
     /**
      * Makes a piece of HTML editable.
      *
-     * @param string        $html    The HTML to be editable
-     * @param \Bolt\Content $content The actual content
-     * @param string        $field
-     * @param boolean       $safe
+     * @param string               $html    The HTML to be editable
+     * @param \Bolt\Legacy\Content $content The actual content
+     * @param string               $field
+     * @param boolean              $safe
      *
      * @return string
      */
@@ -100,7 +80,7 @@ class HtmlHandler
      */
     public function htmlLang()
     {
-        return str_replace('_', '-', $this->app['config']->get('general/locale', Application::DEFAULT_LOCALE));
+        return str_replace('_', '-', $this->app['locale']);
     }
 
     /**
@@ -110,9 +90,10 @@ class HtmlHandler
      */
     public function isMobileClient()
     {
+        $request = Request::createFromGlobals();
         if (preg_match(
             '/(android|blackberry|htc|iemobile|iphone|ipad|ipaq|ipod|nokia|playbook|smartphone)/i',
-            $_SERVER['HTTP_USER_AGENT']
+            $request->server->get('HTTP_USER_AGENT')
         )) {
             return true;
         } else {
@@ -143,12 +124,35 @@ class HtmlHandler
             [
                 'output-format'   => 'html',
                 'allowed-tags'    => $allowed_tags,
-                'allowed-attribs' => $allowed_attributes
+                'allowed-attribs' => $allowed_attributes,
             ]
         );
         $output = $maid->clean($output);
 
         return $output;
+    }
+
+    /**
+     * Create an HTML link to a given URL or contenttype/slug pair.
+     *
+     * @param string $location
+     * @param string $label
+     *
+     * @return string
+     */
+    public function link($location, $label = '[link]')
+    {
+        if ((string) $location === '') {
+            return '';
+        }
+
+        if (Html::isURL($location)) {
+            $location = Html::addScheme($location);
+        } elseif ($record = $this->app['storage']->getContent($location)) {
+            $location = $record->link();
+        }
+
+        return sprintf('<a href="%s">%s</a>', $location, $label);
     }
 
     /**
@@ -168,18 +172,14 @@ class HtmlHandler
             return null;
         }
 
-        /** @var \Bolt\Helpers\Menu $menu */
+        /** @var \Bolt\Menu\Menu $menu */
         $menu = $this->app['menu']->menu($identifier);
 
         $twigvars = [
             'name' => $menu->getName(),
-            'menu' => $menu->getItems()
+            'menu' => $menu->getItems(),
         ];
-
-        // If $params is not empty, merge it with twigvars.
-        if (!empty($params) && is_array($params)) {
-            $twigvars = $twigvars + $params;
-        }
+        $twigvars += (array) $params;
 
         return $env->render($template, $twigvars);
     }

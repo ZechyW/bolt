@@ -75,7 +75,7 @@ class SystemHandler extends AbstractProcessingHandler
                     'line'     => $e->getLine(),
                     'class'    => isset($trace['class']) ? $trace['class'] : '',
                     'function' => isset($trace['function']) ? $trace['function'] : '',
-                    'message'  => $e->getMessage()
+                    'message'  => $e->getMessage(),
                 ]
             );
         } elseif ($this->app['debug']) {
@@ -85,7 +85,7 @@ class SystemHandler extends AbstractProcessingHandler
             $source = json_encode(
                 [
                     'file'     => str_replace($this->app['resources']->getPath('root'), '', $backtrace['file']),
-                    'line'     => $backtrace['line']
+                    'line'     => $backtrace['line'],
                 ]
             );
         } else {
@@ -98,18 +98,24 @@ class SystemHandler extends AbstractProcessingHandler
             $user = $user ? $user->getUser()->toArray() : null;
         }
 
+        // Get request data if available
+        $request = $this->app['request_stack']->getCurrentRequest();
+        $requestUri = $request ? $request->getRequestUri() : '';
+        $requestRoute = $request ? $request->get('_route') : '';
+        $requestIp = $request ? $request->getClientIp() : '127.0.0.1';
+
         $this->app['db']->insert(
             $this->tablename,
             [
                 'level'      => $record['level'],
                 'date'       => $record['datetime']->format('Y-m-d H:i:s'),
                 'message'    => $record['message'],
-                'ownerid'    => isset($user['id']) ? $user['id'] : '',
-                'requesturi' => $this->app['request']->getRequestUri(),
-                'route'      => $this->app['request']->get('_route', ''),
-                'ip'         => $this->app['request']->getClientIp() ? : '127.0.0.1',
+                'ownerid'    => isset($user['id']) ? $user['id'] : 0,
+                'requesturi' => $requestUri,
+                'route'      => $requestRoute,
+                'ip'         => $requestIp,
                 'context'    => isset($record['context']['event']) ? $record['context']['event'] : '',
-                'source'     => $source
+                'source'     => $source,
             ]
         );
     }
@@ -119,7 +125,7 @@ class SystemHandler extends AbstractProcessingHandler
      */
     private function initialize()
     {
-        $this->tablename = sprintf("%s%s", $this->app['config']->get('general/database/prefix'), 'log_system');
+        $this->tablename = sprintf('%s%s', $this->app['config']->get('general/database/prefix'), 'log_system');
         $this->initialized = true;
     }
 }

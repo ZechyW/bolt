@@ -1,6 +1,8 @@
 <?php
 namespace Bolt\Tests\Nut;
 
+use Bolt\Filesystem\Adapter\Local;
+use Bolt\Filesystem\Filesystem;
 use Bolt\Nut\ConfigSet;
 use Bolt\Tests\BoltUnitTest;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -15,14 +17,15 @@ class ConfigSetTest extends BoltUnitTest
     public function testSet()
     {
         $app = $this->getApp();
-        $app['filesystem']->mount('config', PHPUNIT_ROOT . '/resources/');
+        $filesystem = new Filesystem(new Local(PHPUNIT_ROOT . '/resources/'));
+        $app['filesystem']->mountFilesystem('config', $filesystem);
 
         $command = new ConfigSet($app);
         $tester = new CommandTester($command);
 
         // Test successful update
         $tester->execute(['key' => 'sitename', 'value' => 'my test', '--file' => 'config.yml']);
-        $this->assertRegExp("/New value for sitename: my test was successful/", $tester->getDisplay());
+        $this->assertRegExp('/New value for sitename: my test was successful/', $tester->getDisplay());
 
         // Test non-existent fails
         $tester->execute(['key' => 'nonexistent', 'value' => 'test', '--file' => 'config.yml']);
@@ -32,6 +35,9 @@ class ConfigSetTest extends BoltUnitTest
     public function testDefaultFile()
     {
         $app = $this->getApp();
+        $filesystem = new Filesystem(new Local(PHPUNIT_ROOT . '/resources/'));
+        $app['filesystem']->mountFilesystem('config', $filesystem);
+
         $command = new ConfigSet($app);
         $tester = new CommandTester($command);
         $app['resources']->setPath('config', PHPUNIT_ROOT . '/resources');

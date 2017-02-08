@@ -53,21 +53,21 @@ class Stack extends AsyncBase
             'stack'     => $this->stack()->listitems($count),
             'filetypes' => $this->stack()->getFileTypes(),
             'namespace' => $this->app['upload.namespace'],
-            'canUpload' => $this->isAllowed('files:uploads')
+            'canUpload' => $this->isAllowed('files:uploads'),
         ];
 
         switch ($options) {
             case 'minimal':
-                $twig = 'components/stack-minimal.twig';
+                $twig = '@bolt/components/stack-minimal.twig';
                 break;
 
             case 'list':
-                $twig = 'components/stack-list.twig';
+                $twig = '@bolt/components/stack-list.twig';
                 break;
 
             case 'full':
             default:
-                $twig = 'components/panel-stack.twig';
+                $twig = '@bolt/components/panel-stack.twig';
                 break;
         }
 

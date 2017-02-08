@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Backend controller for logging routes.
  *
- * Prior to v2.3 this functionality primarily existed in the monolithic
+ * Prior to v3.0 this functionality primarily existed in the monolithic
  * Bolt\Controllers\Backend class.
  *
  * @author Gawain Lynch <gawain.lynch@gmail.com>
@@ -48,28 +48,27 @@ class Log extends BackendBase
 
         if ($action == 'clear') {
             $this->manager()->clear('change');
-            $this->flashes()->success(Trans::__('The change log has been cleared.'));
+            $this->flashes()->success(Trans::__('logs.change-log.cleared'));
 
             return $this->redirectToRoute('changelog');
         } elseif ($action == 'trim') {
             $this->manager()->trim('change');
-            $this->flashes()->success(Trans::__('The change log has been trimmed.'));
+            $this->flashes()->success(Trans::__('logs.change-log.trimmed'));
 
             return $this->redirectToRoute('changelog');
         }
 
         // Test/get page number
-        $param = Pager::makeParameterId('activity');
-        $page = ($request->query) ? $request->query->get($param, $request->query->get('page', 1)) : 1;
+        $page = $this->app['pager']->getCurrentPage('activity');
 
         $options = [
             'contenttype' => $request->query->get('contenttype'),
             'contentid'   => $request->query->get('contentid'),
-            'ownerid'     => $request->query->get('ownerid')
+            'ownerid'     => $request->query->get('ownerid'),
         ];
         $activity = $this->manager()->getActivity('change', $page, 16, $options);
 
-        return $this->render('activity/changelog.twig', ['entries' => $activity]);
+        return $this->render('@bolt/activity/changelog.twig', ['entries' => $activity]);
     }
 
     /**
@@ -86,7 +85,7 @@ class Log extends BackendBase
     {
         $entry = $this->changeLogRepository()->getChangeLogEntry($contenttype, $contentid, $id, '=');
         if (empty($entry)) {
-            $error = Trans::__("The requested changelog entry doesn't exist.");
+            $error = Trans::__('logs.change-log.not-found');
 
             $this->abort(Response::HTTP_NOT_FOUND, $error);
         }
@@ -97,10 +96,10 @@ class Log extends BackendBase
             'contenttype' => ['slug' => $contenttype],
             'entry'       => $entry,
             'next_entry'  => $next,
-            'prev_entry'  => $prev
+            'prev_entry'  => $prev,
         ];
 
-        return $this->render('changelog/changelog_record_single.twig', $context);
+        return $this->render('@bolt/changelog/changelog_record_single.twig', $context);
     }
 
     /**
@@ -126,7 +125,7 @@ class Log extends BackendBase
         if (empty($contenttype)) {
             // Case 1: No content type given, show from *all* items. This is easy:
             $data = [
-                'title'   => Trans::__('All content types'),
+                'title'   => Trans::__('logs.change-log.contenttypes.all'),
                 'entries' => $this->changeLogRepository()->getChangeLog($queryOptions),
                 'count'   => $this->changeLogRepository()->countChangeLog(),
             ];
@@ -141,10 +140,10 @@ class Log extends BackendBase
             'content'     => $data['content'],
             'title'       => $data['title'],
             'currentpage' => $pagination['page'],
-            'pagecount'   => $pagination['limit'] ? ceil($data['count'] / $pagination['limit']) : null
+            'pagecount'   => $pagination['limit'] ? ceil($data['count'] / $pagination['limit']) : null,
         ];
 
-        return $this->render('changelog/changelog_record_all.twig', $context);
+        return $this->render('@bolt/changelog/changelog_record_all.twig', $context);
     }
 
     /**
@@ -160,27 +159,27 @@ class Log extends BackendBase
 
         if ($action == 'clear') {
             $this->manager()->clear('system');
-            $this->flashes()->success(Trans::__('The system log has been cleared.'));
+            $this->flashes()->success(Trans::__('logs.system-log.cleared'));
 
             return $this->redirectToRoute('systemlog');
         } elseif ($action == 'trim') {
             $this->manager()->trim('system');
-            $this->flashes()->success(Trans::__('The system log has been trimmed.'));
+            $this->flashes()->success(Trans::__('logs.system-log.trimmed'));
 
             return $this->redirectToRoute('systemlog');
         }
 
         // Test/get page number
-        $param = Pager::makeParameterId('activity');
-        $page = ($request->query) ? $request->query->get($param, $request->query->get('page', 1)) : 1;
+        $page = $this->app['pager']->getCurrentPage('activity');
+
         $options = [
-            'level' => $request->query->get('level'),
-            'context' => $request->query->get('context')
+            'level'   => $request->query->get('level'),
+            'context' => $request->query->get('context'),
         ];
 
         $activity = $this->manager()->getActivity('system', $page, 16, $options);
 
-        return $this->render('activity/systemlog.twig', ['entries' => $activity]);
+        return $this->render('@bolt/activity/systemlog.twig', ['entries' => $activity]);
     }
 
     /**
@@ -192,7 +191,7 @@ class Log extends BackendBase
     }
 
     /**
-     * @return \Bolt\Storage\Repository\LogChange
+     * @return \Bolt\Storage\Repository\LogChangeRepository
      */
     protected function changeLogRepository()
     {
@@ -200,7 +199,7 @@ class Log extends BackendBase
     }
 
     /**
-     * @return \Bolt\Storage\Repository\LogSystem
+     * @return \Bolt\Storage\Repository\LogSystemRepository
      */
     protected function systemLogRepository()
     {
@@ -243,7 +242,7 @@ class Log extends BackendBase
         // Some options that are the same for all three cases
         $options = [
             'order'     => 'date',
-            'direction' => 'DESC'
+            'direction' => 'DESC',
         ];
 
         if ($pagination['limit']) {

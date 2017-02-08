@@ -2,6 +2,7 @@
  * Form validation
  */
 Bolt.validation = (function () {
+    "use strict";
 
     /**
      * Basic legacy validation checking
@@ -27,8 +28,6 @@ Bolt.validation = (function () {
             return valid;
         }
 
-        /* jshint -W126 */
-
         // value required?
         valid = valid && (!required ||
             (chkbox && field.checked) ||
@@ -40,8 +39,6 @@ Bolt.validation = (function () {
             (!minlength || val.length >= minlength) &&
             (!maxlength || val.length <= maxlength)
         ));
-
-        /* jshint +W126 */
 
         // Test pattern
         if (valid && pattern) {
@@ -203,31 +200,33 @@ Bolt.validation = (function () {
         var validates = $(field).data('validate');
         if (validates) {
             for (task in validates) {
-                param = validates[task];
+                if (validates.hasOwnProperty(task)) {
+                    param = validates[task];
 
-                switch (task) {
-                    case 'float':
-                        error = checkFloat(value);
+                    switch (task) {
+                        case 'float':
+                            error = checkFloat(value);
+                            break;
+
+                        case 'required':
+                            error =  checkRequired(value, param);
+                            break;
+
+                        case 'min':
+                            error = checkMin(value, param);
+                            break;
+
+                        case 'max':
+                            error = checkMax(value, param);
+                            break;
+
+                        default:
+                            console.log('UNKNOWN VALIDATION' + task + " -> " + param);
+                    }
+                    // Stop on first error
+                    if (error) {
                         break;
-
-                    case 'required':
-                        error =  checkRequired(value, param);
-                        break;
-
-                    case 'min':
-                        error = checkMin(value, param);
-                        break;
-
-                    case 'max':
-                        error = checkMax(value, param);
-                        break;
-
-                    default:
-                        console.log('UNKNOWN VALIDATION' + task + " -> " + param);
-                }
-                // Stop on first error
-                if (error) {
-                    break;
+                    }
                 }
             }
             setValidity(field, error);

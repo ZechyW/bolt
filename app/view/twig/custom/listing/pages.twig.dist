@@ -3,7 +3,7 @@
    Add a template "/app/view/twig/custom/listing/<contenttypeslug>.twig" and add the blocks you want to display different.
    Unchanged Blocks use the defaults
 #}
-{% extends '_base/_listing.twig' %}
+{% extends '@bolt/_base/_listing.twig' %}
 
 
 {# The number of columns used in listing table #}
@@ -24,9 +24,9 @@
         <a href="{{ link }}image {% if request('order') == "image ASC" %}DESC{% else %}ASC{% endif %}">{{ __('Image') }}</a>
     </th>
 
-    <th class="username hidden-xs"><a href="{{ link }}datecreated {% if request('order') == "datecreated ASC" %}DESC{% else %}ASC{% endif %}">{{ __('Meta') }}</a></th>
+    <th class="username hidden-xs"><a href="{{ link }}datecreated {% if request('order') == "datecreated ASC" %}DESC{% else %}ASC{% endif %}">{{ __('general.phrase.meta') }}</a></th>
 
-    <th><a href="?">{{ __('Actions') }}</a></th>
+    <th><a href="?">{{ __('general.phrase.action-plural') }}</a></th>
 {% endblock %}
 
 
@@ -50,11 +50,11 @@
             <strong>
                 {% if editable %}
                 <a href="{{ path('editcontent', {'contenttypeslug': content.contenttype.slug, 'id': content.id}) }}" title="Slug: {{ content.slug }}">
-                    {{ content.getTitle }}
+                    {{ content.getTitle(true) }}
                 </a>
                 {% else %}
                 <strong>
-                    {{ content.getTitle }}
+                    {{ content.getTitle(true) }}
                 </strong>
                 {% endif %}
             </strong>

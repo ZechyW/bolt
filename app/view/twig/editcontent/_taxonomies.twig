@@ -2,9 +2,9 @@
 
 {% if not context.has.tabs %}
     <h3>
-        {{ __('Taxonomy') }}
-        <span class="label info-pop" data-html="true" data-title="{{ __('Taxonomy') }}"
-                  data-content="{{ app.translator.trans('info.taxonomy',{},'infos') }}">{{ __('Info') }}</span>
+        {{ __('general.phrase.taxonomy') }}
+        <span class="label info-pop" data-html="true" data-title="{{ __('general.phrase.taxonomy') }}"
+                  data-content="{{ app.translator.trans('info.taxonomy', {}, 'infos') }}">{{ __('general.phrase.info') }}</span>
     </h3>
 {% endif %}
 
@@ -12,7 +12,7 @@
     {% if config.get('taxonomy')[taxonomyslug] is defined %}
         {% set taxonomy = config.get('taxonomy')[taxonomyslug] %}
 
-        <div data-fieldtype="taxonomy-{{ taxonomy.behaves_like }}">
+        <div data-bolt-fieldset="{{ taxonomy.behaves_like }}">
             {# Prefix #}
             {% if taxonomy.prefix is defined and taxonomy.prefix is not empty %}
                 <div class="prefix">
@@ -21,12 +21,12 @@
             {% endif %}
 
             {# Fieldset #}
-            {% if taxonomy.behaves_like == "tags" %}
-                {% include 'editcontent/fields/_taxonomy-tags.twig' %}
-            {% elseif taxonomy.behaves_like == "categories" %}
-                {% include 'editcontent/fields/_taxonomy-categories.twig' %}
-            {% elseif taxonomy.behaves_like == "grouping" %}
-                {% include 'editcontent/fields/_taxonomy-grouping.twig' %}
+            {% if taxonomy.behaves_like == 'tags' %}
+                {{ include('@bolt/editcontent/fields/_tags.twig') }}
+            {% elseif taxonomy.behaves_like == 'categories' %}
+                {{ include('@bolt/editcontent/fields/_categories.twig') }}
+            {% elseif taxonomy.behaves_like == 'grouping' %}
+                {{ include('@bolt/editcontent/fields/_grouping.twig') }}
             {% endif %}
 
             {# Postfix #}
@@ -40,5 +40,5 @@
 {% endfor %}
 
 {% if context.has.tabs and 'taxonomy' in context.contenttype.groups %}
-    {% include 'editcontent/_fields.twig' %}
+    {{ include('@bolt/editcontent/_field.twig') }}
 {% endif %}

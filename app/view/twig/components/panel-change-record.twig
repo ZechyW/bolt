@@ -2,9 +2,9 @@
  # Sidebar-Panel: Displays the specific record's recent change log entries
  # (Usage Example: Edit content)
  #}
-{% extends '_base/_panel.twig' %}
+{% extends '@bolt/_base/_panel.twig' %}
 
-{% import '_macro/_macro.twig' as macro %}
+{% import '@bolt/_macro/_macro.twig' as macro %}
 
 {% block panel_class 'panel-change-record' %}
 
@@ -13,15 +13,18 @@
 {% block panel_head __('contenttypes.generic.recent-changes-one',{'%contenttype%': context.contenttype}) %}
 
 {% block panel_body %}
+    {% from '@bolt/_buic/_moment.twig' import buic_moment %}
+
     <div id="changeholder">
         <div class="row">
             <div class="col-xs-12">
             {% for item in context.entries %}
                 <p>- <a href="{{ path('changelogrecordsingle', {'contenttype': item.contenttype, 'contentid': item.contentid, 'id': item.id}) }}">
-                          <time class="moment" datetime="{{ item.date|date("c") }}" title="{{ item.date|date("c") }}"></time>
-                          </a> changed by <em>{{ macro.userlink(item.ownerid|default('')) }}</em></p>
+                    {{ buic_moment(item.date) }}
+                    </a> changed by <em>{{ macro.userlink(item.ownerid|default('')) }}</em>
+                </p>
             {% else %}
-                <div class="nochangeitems">{{ __('There are no saved changes, yet.') }}</div>
+                <div class="nochangeitems">{{ __('general.phrase.not-saved') }}</div>
             {% endfor %}
             </div>
         </div>

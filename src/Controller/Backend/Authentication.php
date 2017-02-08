@@ -1,6 +1,9 @@
 <?php
 namespace Bolt\Controller\Backend;
 
+use Bolt\AccessControl\Token\Token;
+use Bolt\Events\AccessControlEvent;
+use Bolt\Events\AccessControlEvents;
 use Bolt\Translation\Translator as Trans;
 use Silex\ControllerCollection;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -42,14 +45,19 @@ class Authentication extends BackendBase
     {
         $user = $this->getUser();
         if ($user && $user->getEnabled() == 1) {
-            return $this->redirectToRoute('dashboard');
+            $response = $this->redirectToRoute('dashboard');
+
+            $token = $this->session()->get('authentication');
+            $this->setAuthenticationCookie($response, $token);
+
+            return $response;
         }
 
         if ($this->getOption('general/enforce_ssl') && !$request->isSecure()) {
             return $this->redirect(preg_replace('/^http:/i', 'https:', $request->getUri()));
         }
 
-        $response = $this->render('login/login.twig', ['randomquote' => true]);
+        $response = $this->render('@bolt/login/login.twig', ['randomquote' => true]);
         $response->setVary('Cookies', false)->setMaxAge(0)->setPrivate();
 
         if ($resetCookies) {
@@ -68,16 +76,12 @@ class Authentication extends BackendBase
      */
     public function postLogin(Request $request)
     {
-        $this->login()->setRequest($request);
-
-        $username = trim($request->request->get('username'));
-        $password = $request->request->get('password');
         switch ($request->get('action')) {
             case 'login':
-                return $this->handlePostLogin($request, $username, $password);
+                return $this->handlePostLogin($request);
 
             case 'reset':
-                return $this->handlePostReset($request, $username);
+                return $this->handlePostReset($request);
         }
         // Let's not disclose any internal information.
         $this->abort(Response::HTTP_BAD_REQUEST, 'Invalid request');
@@ -88,62 +92,78 @@ class Authentication extends BackendBase
      *
      * @return \Symfony\Component\HttpFoundation\RedirectResponse
      */
-    public function logout()
+    public function logout(Request $request)
     {
+        $event = new AccessControlEvent($request);
+        /** @var Token $sessionAuth */
         $sessionAuth = $this->session()->get('authentication');
-        $displayname = $sessionAuth ? $sessionAuth->getToken()->getDisplayname() : false;
-        if ($displayname) {
-            $this->app['logger.system']->info('Logged out: ' . $displayname, ['event' => 'authentication']);
+        $userName = $sessionAuth ? $sessionAuth->getToken()->getUsername() : false;
+        if ($userName) {
+            $this->app['logger.system']->info('Logged out: ' . $userName, ['event' => 'authentication']);
+            $event->setUserName($userName);
         }
+        $this->app['dispatcher']->dispatch(AccessControlEvents::LOGOUT_SUCCESS, $event);
 
-        $this->authentication()->revokeSession();
+        // Clear the session
+        $this->accessControl()->revokeSession();
+        $this->session()->invalidate(-1);
 
+        // Clear cookie data
         $response = $this->redirectToRoute('login');
-        $response->headers->clearCookie($this->app['token.authentication.name']);
+        $response->headers->clearCookie(
+            $this->app['token.authentication.name'],
+            $this->resources()->getUrl('root'),
+            $this->getOption('general/cookies_domain'),
+            $this->getOption('general/enforce_ssl')
+        );
 
         return $response;
     }
 
     /**
-     * Reset the password. This controller is normally only reached when the user
+     * Reset the password. This route is normally only reached when the user
      * clicks a "password reset" link in the email.
      *
-     * @param Request $request The Symfony Request
+     * @param Request $request
      *
      * @return \Symfony\Component\HttpFoundation\RedirectResponse
      */
     public function resetPassword(Request $request)
     {
-        $this->password()->resetPasswordConfirm($request->get('token'), $request->getClientIp());
+        $event = new AccessControlEvent($request);
+        $this->password()->resetPasswordConfirm($request->get('token'), $request->getClientIp(), $event);
 
-        return $this->redirectToRoute('login');
+        return $this->redirectToRoute('login', ['action' => 'login']);
     }
 
     /**
      * Handle a login POST.
      *
      * @param Request $request
-     * @param string  $username
-     * @param string  $password
      *
-     * @return RedirectResponse
+     * @return Response
      */
-    private function handlePostLogin(Request $request, $username, $password)
+    private function handlePostLogin(Request $request)
     {
-        if (!$this->login()->login($request, $username, $password)) {
+        $event = new AccessControlEvent($request);
+        $username = trim($request->request->get('username'));
+        $password = $request->request->get('password');
+
+        if (!$this->login()->login($username, $password, $event)) {
             return $this->getLogin($request, true);
         }
 
         // Authentication data is cached in the session and if we can't get it
         // now, everyone is going to have a bad day. Make that obvious.
         if (!$token = $this->session()->get('authentication')) {
-            $this->flashes()->error(Trans::__("Unable to retrieve login session data. Please check your system's PHP session settings."));
+            $this->flashes()->error(Trans::__('general.phrase.error-session-data-login'));
 
             return $this->getLogin($request);
         }
 
         // Log in, if credentials are correct.
         $this->app['logger.system']->info('Logged in: ' . $username, ['event' => 'authentication']);
+
         $retreat = $this->session()->get('retreat', ['route' => 'dashboard', 'params' => []]);
         $response = $this->setAuthenticationCookie($this->redirectToRoute($retreat['route'], $retreat['params']), (string) $token);
 
@@ -154,17 +174,19 @@ class Authentication extends BackendBase
      * Handle a password reset POST.
      *
      * @param Request $request
-     * @param string  $username
      *
      * @return RedirectResponse
      */
-    private function handlePostReset(Request $request, $username)
+    private function handlePostReset(Request $request)
     {
+        $event = new AccessControlEvent($request);
+        $username = trim($request->request->get('username'));
+
         // Send a password request mail, if username exists.
-        if (empty($username)) {
-            $this->flashes()->error(Trans::__('Please provide a username'));
+        if ($username === null || $username === '') {
+            $this->flashes()->error(Trans::__('general.phrase.please-provide-username'));
         } else {
-            $this->password()->resetPasswordRequest($username, $request->getClientIp());
+            $this->password()->resetPasswordRequest($username, $request->getClientIp(), $event);
             $response = $this->redirectToRoute('login');
             $response->setVary('Cookies', false)->setMaxAge(0)->setPrivate();
 

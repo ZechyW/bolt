@@ -1,17 +1,26 @@
 <?php
 namespace Bolt\Controller;
 
+use Bolt\AccessControl\Token\Token;
 use Bolt\Routing\DefaultControllerClassAwareInterface;
 use Bolt\Storage\Entity;
+use Bolt\Storage\Repository;
+use Bolt\Translation\Translator as Trans;
+use Doctrine\DBAL\Exception\TableNotFoundException;
 use Silex\Application;
 use Silex\ControllerCollection;
 use Silex\ControllerProviderInterface;
+use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\Form\Form;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\Form\FormTypeInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
 
 /**
  * Base class for all controllers which mainly provides shortcut methods for
@@ -45,6 +54,8 @@ abstract class Base implements ControllerProviderInterface
      * @param integer $statusCode The HTTP status code
      * @param string  $message    The status message
      * @param array   $headers    An array of HTTP headers
+     *
+     * @throws HttpExceptionInterface
      */
     protected function abort($statusCode, $message = '', array $headers = [])
     {
@@ -88,7 +99,7 @@ abstract class Base implements ControllerProviderInterface
      *
      * @return Form
      */
-    protected function createForm($type = 'form', $data = null, array $options = [])
+    protected function createForm($type = FormType::class, $data = null, array $options = [])
     {
         return $this->app['form.factory']->create($type, $data, $options);
     }
@@ -102,7 +113,7 @@ abstract class Base implements ControllerProviderInterface
      *
      * @return FormBuilderInterface The form builder
      */
-    protected function createFormBuilder($type = 'form', $data = null, array $options = [])
+    protected function createFormBuilder($type = FormType::class, $data = null, array $options = [])
     {
         return $this->app['form.factory']->createBuilder($type, $data, $options);
     }
@@ -112,7 +123,7 @@ abstract class Base implements ControllerProviderInterface
      *
      * @param string $name          The name of the route
      * @param array  $params        An array of parameters
-     * @param bool   $referenceType The type of reference to be generated (one of the constants)
+     * @param int    $referenceType The type of reference to be generated (one of the constants)
      *
      * @return string
      */
@@ -120,6 +131,7 @@ abstract class Base implements ControllerProviderInterface
     {
         /** @var UrlGeneratorInterface $generator */
         $generator = $this->app['url_generator'];
+
         return $generator->generate($name, $params, $referenceType);
     }
 
@@ -185,27 +197,46 @@ abstract class Base implements ControllerProviderInterface
      *
      * @return \Bolt\AccessControl\AccessChecker
      */
-    protected function authentication()
+    protected function accessControl()
     {
-        return $this->app['authentication'];
+        return $this->app['access_control'];
     }
 
     /**
-     * Shortcut for {@see \Bolt\Users::checkAntiCSRFToken}
+     * Validates CSRF token and throws HttpException if not.
      *
-     * @param string $token
+     * @param string|null $value The token value or null to use "bolt_csrf_token" parameter from request.
+     * @param string      $id    The token ID.
+     *
+     * @throws HttpExceptionInterface
+     */
+    protected function validateCsrfToken($value = null, $id = 'bolt')
+    {
+        if (!$this->isCsrfTokenValid($value, $id)) {
+            //$this->app['logger.flash']->warning('The security token was incorrect. Please try again.');
+            $this->abort(Response::HTTP_BAD_REQUEST, Trans::__('general.phrase.something-went-wrong'));
+        }
+    }
+
+    /**
+     * Check if csrf token is valid.
+     *
+     * @param string|null $value The token value or null to use "bolt_csrf_token" parameter from request.
+     * @param string      $id    The token ID.
      *
      * @return bool
      */
-    protected function checkAntiCSRFToken($token = '')
+    protected function isCsrfTokenValid($value = null, $id = 'bolt')
     {
-        return $this->users()->checkAntiCSRFToken($token);
+        $token = new CsrfToken($id, $value ?: $this->app['request_stack']->getCurrentRequest()->get('bolt_csrf_token'));
+
+        return $this->app['csrf']->isTokenValid($token);
     }
 
     /**
      * Gets the \Bolt\Extensions object.
      *
-     * @return \Bolt\Extensions
+     * @return \Bolt\Extension\Manager
      */
     protected function extensions()
     {
@@ -233,29 +264,45 @@ abstract class Base implements ControllerProviderInterface
     }
 
     /**
+     * Check to see if the user table exists and has records.
+     *
+     * @return boolean
+     */
+    protected function hasUsers()
+    {
+        try {
+            $users = $this->app['users']->getUsers();
+            if (empty($users)) {
+                return false;
+            }
+
+            return true;
+        } catch (TableNotFoundException $e) {
+            return false;
+        }
+    }
+
+    /**
      * Return current user or user by ID.
      *
      * @param integer|string|null $userId
-     * @param boolean             $raw
      *
-     * @return Entity\Users|null
+     * @return Entity\Users|false
      */
-    protected function getUser($userId = null, $raw = false)
+    protected function getUser($userId = null)
     {
         if ($userId === null) {
-            if ($sessionAuth = $this->session()->get('authentication')) {
+            /** @var Token $sessionAuth */
+            if ($this->session()->isStarted() && $sessionAuth = $this->session()->get('authentication')) {
                 return $sessionAuth->getUser();
             }
 
-            return;
+            return false;
         }
+        /** @var Repository\UsersRepository $repo */
+        $repo = $this->storage()->getRepository('Bolt\Storage\Entity\Users');
 
-        $repo = $this->app['storage']->getRepository('Bolt\Storage\Entity\Users');
-        if (($userEntity = $repo->getUser($userId)) && !$raw) {
-            $userEntity->setPassword('**dontchange**');
-        }
-
-        return $userEntity;
+        return $repo->getUser($userId);
     }
 
     /**
@@ -270,26 +317,41 @@ abstract class Base implements ControllerProviderInterface
      */
     protected function isAllowed($what, $user = null, $contenttype = null, $contentid = null)
     {
-        if ($user === null && $user = $this->session()->get('authentication')) {
-            $user = $user->getUser()->toArray();
+        /** @var Token $sessionAuth */
+        if ($user === null && $sessionAuth = $this->session()->get('authentication')) {
+            $user = $sessionAuth->getUser()->toArray();
         }
 
         return $this->app['permissions']->isAllowed($what, $user, $contenttype, $contentid);
     }
 
     /**
-     * Shortcut for {@see \Bolt\Storage::getContent}
+     * Return a repository.
+     *
+     * @param string $repository
+     *
+     * @return \Bolt\Storage\Repository
+     */
+    protected function getRepository($repository)
+    {
+        return $this->storage()->getRepository($repository);
+    }
+
+    /**
+     * Shortcut for {@see \Bolt\Legacy\Storage::getContent()}
      *
      * @param string $textquery
      * @param array  $parameters
      * @param array  $pager
      * @param array  $whereparameters
      *
-     * @return \Bolt\Content|\Bolt\Content[]
+     * @return \Bolt\Legacy\Content|\Bolt\Legacy\Content[]
+     *
+     * @see \Bolt\Legacy\Storage::getContent()
      */
     protected function getContent($textquery, $parameters = [], &$pager = [], $whereparameters = [])
     {
-        return $this->app['storage']->getContent($textquery, $parameters, $pager, $whereparameters);
+        return $this->storage()->getContent($textquery, $parameters, $pager, $whereparameters);
     }
 
     /**
@@ -301,20 +363,52 @@ abstract class Base implements ControllerProviderInterface
      */
     protected function getContentType($slug)
     {
-        return $this->app['storage']->getContentType($slug);
+        return $this->storage()->getContentType($slug);
+    }
+
+    /**
+     * Helper to get a user's permissions for a ContentType.
+     *
+     * @param string             $contentTypeSlug
+     * @param array|Entity\Users $user
+     *
+     * @return boolean[]
+     */
+    protected function getContentTypeUserPermissions($contentTypeSlug, $user = null)
+    {
+        if ($user === null) {
+            return $this->app['permissions']->getContentTypePermissions();
+        }
+
+        return $this->app['permissions']->getContentTypeUserPermissions($contentTypeSlug, $user);
     }
 
     /**
      * Shortcut for {@see \Bolt\Config::get}.
      *
      * @param string $path
-     * @param string $default
+     * @param mixed  $default
      *
      * @return string|integer|array|null
      */
     protected function getOption($path, $default = null)
     {
         return $this->app['config']->get($path, $default);
+    }
+
+    /**
+     * Get an array of query parameters used in the request.
+     *
+     * @param Request $request
+     *
+     * @return array
+     */
+    protected function getRefererQueryParameters(Request $request)
+    {
+        $referer = $request->server->get('HTTP_REFERER');
+        $request = Request::create($referer);
+
+        return (array) $request->query->getIterator();
     }
 
     /**

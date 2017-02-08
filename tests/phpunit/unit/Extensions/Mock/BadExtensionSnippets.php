@@ -2,6 +2,7 @@
 namespace Bolt\Tests\Extensions\Mock;
 
 use Bolt\Application;
+use Bolt\Asset\Snippet\Snippet;
 use Bolt\Asset\Target;
 
 /**
@@ -13,15 +14,14 @@ class BadExtensionSnippets extends Extension
 {
     public function __construct(Application $app)
     {
-        $app['asset.queue.snippet']->add(Target::END_OF_HEAD, [$this, 'badSnippetCallBack'], __CLASS__);
+        $snippet = (new Snippet())
+            ->setLocation(Target::END_OF_HEAD)
+            ->setCallback([$this, 'badSnippetCallBack'])
+        ;
+        $app['asset.queue.snippet']->add($snippet);
     }
 
     public function getSnippets()
     {
-    }
-
-    public function getName()
-    {
-        return 'badextensionsnippets';
     }
 }

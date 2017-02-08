@@ -27,7 +27,8 @@ class ConfigSet extends BaseCommand
             ->addArgument('key', InputArgument::REQUIRED, 'The key you wish to get.')
             ->addArgument('value', InputArgument::REQUIRED, 'The value you wish to set it to.')
             ->addOption('file', 'f', InputOption::VALUE_OPTIONAL, 'Specify config file to use')
-            ->addOption('backup', 'b', InputOption::VALUE_NONE, 'Make a backup of the config file');
+            ->addOption('backup', 'b', InputOption::VALUE_NONE, 'Make a backup of the config file')
+        ;
     }
 
     /**
@@ -54,14 +55,14 @@ class ConfigSet extends BaseCommand
             $yaml = new YamlUpdater($this->app, $file);
 
             if ($yaml->change($key, $value, $backup)) {
-                $result = sprintf("New value for <info>%s: %s</info> was successful. File updated.", $key, $value);
+                $result = sprintf('New value for <info>%s: %s</info> was successful. File updated.', $key, $value);
             } else {
                 $result = sprintf("<error>The key '%s' was not found in %s.</error>", $key, $file);
             }
         } catch (FileNotFoundException $e) {
             $result = sprintf("<error>Can't read file: %s.</error>", $file);
         } catch (ParseException $e) {
-            $result = sprintf("<error>Invalid YAML in file: %s.</error>", $file);
+            $result = sprintf('<error>Invalid YAML in file: %s.</error>', $file);
         } catch (FilesystemException $e) {
             $result = sprintf('<error>' . $e->getMessage() . '</error>');
         }

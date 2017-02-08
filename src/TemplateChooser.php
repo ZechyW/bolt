@@ -2,20 +2,22 @@
 
 namespace Bolt;
 
+use Silex;
+
 /**
  * A class for choosing whichever template should be used.
  */
 class TemplateChooser
 {
-    /** @var Application */
+    /** @var Silex\Application */
     private $app;
 
     /**
      * Constructor.
      *
-     * @param Application $app
+     * @param Silex\Application $app
      */
-    public function __construct(Application $app)
+    public function __construct(Silex\Application $app)
     {
         $this->app = $app;
     }
@@ -23,7 +25,7 @@ class TemplateChooser
     /**
      * Choose a template for the homepage.
      *
-     * @param \Bolt\Content|\Bolt\Content[] $content
+     * @param \Bolt\Legacy\Content|\Bolt\Legacy\Content[] $content
      *
      * @return string
      */
@@ -36,16 +38,17 @@ class TemplateChooser
         if ($this->app['config']->get('theme/homepage_template')) {
             $template = $this->app['config']->get('theme/homepage_template');
         }
-        
+
         // Fallback if no content: index.twig
         if (empty($content) && empty($template)) {
-                $template = 'index.twig';
+            $template = 'index.twig';
         }
-        
+
         // Fallback with content: use record() or listing() to choose template
         if (empty($template)) {
             if (is_array($content)) {
                 $first = current($content);
+
                 return $this->listing($first->contenttype);
             } else {
                 return $this->record($content);
@@ -60,11 +63,15 @@ class TemplateChooser
      * - '/page/about'
      * - '/entry/lorum-ipsum'
      *
-     * @param \Bolt\Content $record
+     * Refactor note: Using a FQCN for the hint here as a `use` statement causes
+     * a fatal in the unit tests… 'cause PHP and class_alias() versus namespaces.
+     *
+     * @param \Bolt\Legacy\Content $record
+     * @param array                $data
      *
      * @return string
      */
-    public function record(Content $record)
+    public function record($record, $data = null)
     {
         // First candidate: global config.yml
         $template = $this->app['config']->get('general/record_template');
@@ -76,23 +83,38 @@ class TemplateChooser
 
         // Third candidate: a template with the same filename as the name of
         // the contenttype.
-        $templatefile = $this->app['resources']->getPath('templatespath/' . $record->contenttype['singular_slug'] . '.twig');
-        if (is_readable($templatefile)) {
-            $template = $record->contenttype['singular_slug'] . '.twig';
+        if (isset($record->contenttype['singular_slug'])) {
+            if ($this->app['render']->hasTemplate($record->contenttype['singular_slug'] . '.twig')) {
+                $template = $record->contenttype['singular_slug'] . '.twig';
+            }
         }
 
         // Fourth candidate: defined specificaly in the contenttype.
         if (isset($record->contenttype['record_template'])) {
-            $templatefile = $this->app['resources']->getPath('templatespath/' . $record->contenttype['record_template']);
-            if (file_exists($templatefile)) {
+            if ($this->app['render']->hasTemplate($record->contenttype['record_template'])) {
                 $template = $record->contenttype['record_template'];
             }
         }
 
-        // Fifth candidate: The record has a templateselect field, and it's set.
-        foreach ($record->contenttype['fields'] as $name => $field) {
-            if ($field['type'] == 'templateselect' && !empty($record->values[$name])) {
-                $template = $record->values[$name];
+        // Fifth candidate: An entity has a templateselect field, and it's set.
+        if (isset($record->contenttype['fields'])) {
+            foreach ($record->contenttype['fields'] as $name => $field) {
+                if ($field['type'] == 'templateselect' && $data !== null && !empty($data[$name])) {
+                    $template = $data[$name];
+                }
+
+                if ($field['type'] == 'templateselect' && !empty($record[$name])) {
+                    $template = $record[$name];
+                }
+            }
+        }
+
+        // Sixth candidate: A legacy Content record has a templateselect field, and it's set.
+        if (isset($record->contenttype['fields'])) {
+            foreach ($record->contenttype['fields'] as $name => $field) {
+                if ($field['type'] == 'templateselect' && !empty($record->values[$name])) {
+                    $template = $record->values[$name];
+                }
             }
         }
 
@@ -102,7 +124,7 @@ class TemplateChooser
     /**
      * Select a template for listing pages.
      *
-     * @param string $contenttype
+     * @param array $contenttype
      *
      * @return string
      */
@@ -118,8 +140,7 @@ class TemplateChooser
 
         // Third candidate: a template with the same filename as the name of
         // the contenttype.
-        $filename = $this->app['resources']->getPath('templatespath/' . $contenttype['slug'] . '.twig');
-        if (file_exists($filename) && is_readable($filename)) {
+        if ($this->app['render']->hasTemplate($contenttype['slug'] . '.twig')) {
             $template = $contenttype['slug'] . '.twig';
         }
 

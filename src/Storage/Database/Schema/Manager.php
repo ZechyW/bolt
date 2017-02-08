@@ -1,117 +1,164 @@
 <?php
+
 namespace Bolt\Storage\Database\Schema;
 
-use Bolt\Application;
+use Bolt\Events\SchemaEvent;
+use Bolt\Events\SchemaEvents;
 use Bolt\Storage\Database\Schema\Table\BaseTable;
-use Bolt\Storage\Database\Schema\Table\ContentType;
-use Doctrine\DBAL\Platforms\AbstractPlatform;
-use Doctrine\DBAL\Schema\AbstractSchemaManager;
-use Doctrine\DBAL\Schema\Comparator;
 use Doctrine\DBAL\Schema\Schema;
-use Doctrine\DBAL\Schema\Table;
-use Doctrine\DBAL\Schema\TableDiff;
-use Symfony\Component\HttpFoundation\Response;
+use Silex\Application;
 
-class Manager
+/**
+ * Manager class for Bolt database schema.
+ *
+ * Based on on parts of the monolithic Bolt\Database\IntegrityChecker class.
+ *
+ * @author Gawain Lynch <gawain.lynch@gmail.com>
+ */
+class Manager implements SchemaManagerInterface
 {
-    /** @var \Bolt\Application */
+    /** @var \Doctrine\DBAL\Connection */
+    protected $connection;
+    /** @var \Bolt\Config */
+    protected $config;
+    /** @var \Doctrine\DBAL\Schema\Schema */
+    protected $schema;
+    /** @var \Doctrine\DBAL\Schema\Table[] */
+    protected $schemaTables;
+    /** @var \Doctrine\DBAL\Schema\Table[] */
+    protected $installedTables;
+
+    /** @var \Silex\Application */
     private $app;
-    /** @var string */
-    private $prefix;
-    /** @var \Doctrine\DBAL\Schema\Table[] Current tables. */
-    private $tables;
 
-    /** @var array Array of callables that produce table definitions. */
-    protected $extension_table_generators = [];
-    /** @var string */
-    protected $integrityCachePath;
-
+    /** @deprecated Deprecated since 3.0, to be removed in 4.0. */
     const INTEGRITY_CHECK_INTERVAL    = 1800; // max. validity of a database integrity check, in seconds
     const INTEGRITY_CHECK_TS_FILENAME = 'dbcheck_ts'; // filename for the check timestamp file
 
-    public $tableMap = [];
-
+    /**
+     * Constructor.
+     *
+     * @param Application $app
+     */
     public function __construct(Application $app)
     {
         $this->app = $app;
-
-        // Check the table integrity only once per hour, per session. (since it's pretty time-consuming.
-        $this->checktimer = 3600;
+        $this->connection = $app['db'];
+        $this->config = $app['config'];
     }
 
     /**
-     * Invalidate our database check by removing the timestamp file from cache.
+     * @deprecated Deprecated since 3.0, to be removed in 4.0. This is a place holder to prevent fatal errors.
      *
-     * @return void
+     * @param string $name
+     * @param mixed  $args
      */
-    public function invalidate()
+    public function __call($name, $args)
     {
-        $fileName = $this->getValidityTimestampFilename();
-
-        // delete the cached dbcheck-ts
-        if (is_writable($fileName)) {
-            unlink($fileName);
-        } elseif (file_exists($fileName)) {
-            $message = sprintf(
-                "The file '%s' exists, but couldn't be removed. Please remove this file manually, and try again.",
-                $fileName
-            );
-            $this->app->abort(Response::HTTP_UNAUTHORIZED, $message);
-        }
+        $this->app['logger.system']->warning('[DEPRECATED]: An extension called an invalid, or removed, integrity checker function: ' . $name, ['event' => 'deprecated']);
     }
 
     /**
-     * Set our state as valid by writing the current date/time to the
-     * app/cache/dbcheck-ts file.
+     * @deprecated Deprecated since 3.0, to be removed in 4.0. This is a place holder to prevent fatal errors.
      *
-     * @return void
+     * @param string $name
      */
-    public function markValid()
+    public function __get($name)
     {
-        $timestamp = time();
-        file_put_contents($this->getValidityTimestampFilename(), $timestamp);
+        $this->app['logger.system']->warning('[DEPRECATED]: An extension called an invalid, or removed integrity, checker property: ' . $name, ['event' => 'deprecated']);
     }
 
     /**
-     * Check if our state is known valid by comparing app/cache/dbcheck-ts to
-     * the current timestamp.
+     * Get the database name of a table from an alias.
      *
-     * @return boolean
+     * @param string $name
+     *
+     * @return string|null
      */
-    public function isValid()
+    public function getTableName($name)
     {
-        if (is_readable($this->getValidityTimestampFilename())) {
-            $validityTS = intval(file_get_contents($this->getValidityTimestampFilename()));
-        } else {
-            $validityTS = 0;
+        $tableName = null;
+        if (isset($this->app['schema.tables'][$name])) {
+            /** @var BaseTable $table */
+            $table = $this->app['schema.tables'][$name];
+            $tableName = $table->getTableName();
         }
 
-        return ($validityTS >= time() - self::INTEGRITY_CHECK_INTERVAL);
+        return $tableName;
     }
 
     /**
-     * Get an associative array with the bolt_tables tables as Doctrine Table objects.
-     *
-     * @return \Doctrine\DBAL\Schema\Table[]
+     * {@inheritdoc}
      */
-    protected function getTableObjects()
+    public function isCheckRequired()
     {
-        if (!empty($this->tables)) {
-            return $this->tables;
+        return $this->getSchemaTimer()->isCheckRequired();
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function isUpdateRequired()
+    {
+        $fromTables = $this->getInstalledTables();
+        $toTables = $this->getSchemaTables();
+        $pending = $this->getSchemaComparator()->hasPending($fromTables, $toTables, $this->app['schema.content_tables']->keys());
+
+        if (!$pending) {
+            $this->getSchemaTimer()->setCheckExpiry();
         }
 
-        /** @var $sm \Doctrine\DBAL\Schema\AbstractSchemaManager */
-        $sm = $this->app['db']->getSchemaManager();
+        return $pending;
+    }
 
-        $this->tables = [];
-
-        foreach ($sm->listTables() as $table) {
-            if (strpos($table->getName(), $this->getTablenamePrefix()) === 0) {
-                $this->tables[$table->getName()] = $table;
-            }
+    /**
+     * Run a check against current and configured schemas.
+     *
+     * @return SchemaCheck
+     */
+    public function check()
+    {
+        $fromTables = $this->getInstalledTables();
+        $toTables = $this->getSchemaTables();
+        $response = $this->getSchemaComparator()->compare($fromTables, $toTables, $this->app['schema.content_tables']->keys());
+        if (!$response->hasResponses()) {
+            $this->getSchemaTimer()->setCheckExpiry();
         }
 
-        return $this->tables;
+        return $response;
+    }
+
+    /**
+     * Run database table updates.
+     *
+     * @return \Bolt\Storage\Database\Schema\SchemaCheck
+     */
+    public function update()
+    {
+        // Do the initial check
+        $fromTables = $this->getInstalledTables();
+        $toTables = $this->getSchemaTables();
+        $this->getSchemaComparator()->compare($fromTables, $toTables, $this->app['schema.content_tables']->keys());
+        $response = $this->getSchemaComparator()->getResponse();
+        $creates = $this->getSchemaComparator()->getCreates();
+        $alters = $this->getSchemaComparator()->getAlters();
+
+        $modifier = new TableModifier($this->connection, $this->app['logger.system'], $this->app['logger.flash']);
+        $modifier->createTables($creates, $response);
+        $modifier->alterTables($alters, $response);
+
+        $event = new SchemaEvent($creates, $alters);
+        $this->app['dispatcher']->dispatch(SchemaEvents::UPDATE, $event);
+
+        // Recheck now that we've processed
+        $fromTables = $this->getInstalledTables();
+        $toTables = $this->getSchemaTables();
+        $this->getSchemaComparator()->compare($fromTables, $toTables, $this->app['schema.content_tables']->keys());
+        if (!$this->getSchemaComparator()->hasPending($fromTables, $toTables, $this->app['schema.content_tables']->keys())) {
+            $this->getSchemaTimer()->setCheckExpiry();
+        }
+
+        return $response;
     }
 
     /**
@@ -119,227 +166,28 @@ class Manager
      *
      * @return boolean
      */
-    public function checkUserTableIntegrity()
+    public function hasUserTable()
     {
-        $tables = $this->getTableObjects();
-
-        // Check the users table.
-        if (!isset($tables[$this->getTablename('users')])) {
-            return false;
+        $tables = $this->getInstalledTables();
+        if (isset($tables['users'])) {
+            return true;
         }
 
-        return true;
+        return false;
     }
 
     /**
-     * Check if all required tables and columns are present in the DB.
+     * Get the built schema.
      *
-     * @param boolean $hinting Return hints if true
-     *
-     * @return CheckResponse
+     * @return \Doctrine\DBAL\Schema\Schema
      */
-    public function checkTablesIntegrity($hinting = false)
+    public function getSchema()
     {
-        $response = new CheckResponse($hinting);
-        $tables = $this->getTablesSchema();
-        $valid = true;
-
-        /** @var $table Table */
-        foreach ($tables as $table) {
-            // Set the valid flag via bitwise
-            $valid = $valid & $this->checkTableIntegrity($table, $response);
+        if ($this->schema === null) {
+            $this->getSchemaTables();
         }
 
-        // If there were no messages, update the timer, so we don't check it again.
-        // If there _are_ messages, keep checking until it's fixed.
-        if ($valid) {
-            $this->markValid();
-        }
-
-        return $response;
-    }
-
-    /**
-     * Check that a single table's columns and indices are present in the DB.
-     *
-     * @param Table         $table
-     * @param CheckResponse $response
-     *
-     * @return boolean
-     */
-    protected function checkTableIntegrity(Table $table, CheckResponse $response)
-    {
-        $comparator = new Comparator();
-        $currentTables = $this->getTableObjects();
-        $tableName = $table->getName();
-
-        // Create the users table.
-        if (!isset($currentTables[$tableName])) {
-            $response->addTitle($tableName, sprintf('Table `%s` is not present.', $tableName));
-        } else {
-            $diff = $comparator->diffTable($currentTables[$tableName], $table);
-            $this->addResponseDiff($tableName, $diff, $response);
-        }
-
-        // If we are using the debug logger, log the diffs
-        foreach ($response->getDiffDetails() as $diff) {
-            $this->app['logger.system']->debug('Database update required', $diff);
-        }
-
-        // If a table still has messages return a false to flick the validity check
-        return !$response->hasResponses();
-    }
-
-    /**
-     * Add details of the table differences to the response object.
-     *
-     * @param string          $tableName
-     * @param TableDiff|false $diff
-     * @param CheckResponse   $response
-     */
-    protected function addResponseDiff($tableName, $diff, CheckResponse $response)
-    {
-        if ($diff === false) {
-            return;
-        }
-
-        $diff = $this->cleanupTableDiff($diff);
-        if ($details = $this->app['db']->getDatabasePlatform()->getAlterTableSQL($diff)) {
-            $response->addTitle($tableName, sprintf('Table `%s` is not the correct schema:', $tableName));
-            $response->checkDiff($tableName, $diff);
-
-            // For debugging we keep the diffs
-            $response->addDiffDetail($details);
-        }
-    }
-
-    /**
-     * Determine if we need to check the table integrity. Do this only once per
-     * hour, per session, since it's pretty time consuming.
-     *
-     * @return boolean TRUE if a check is needed
-     */
-    public function needsCheck()
-    {
-        return !$this->isValid();
-    }
-
-    /**
-     * Check if there are pending updates to the tables.
-     *
-     * @return boolean
-     */
-    public function needsUpdate()
-    {
-        $response = $this->checkTablesIntegrity();
-
-        return $response->hasResponses() ? true : false;
-    }
-
-    /**
-     * Check and repair tables.
-     *
-     * @return CheckResponse
-     */
-    public function repairTables()
-    {
-        // When repairing tables we want to start with an empty flashbag. Otherwise we get another
-        // 'repair your DB'-notice, right after we're done repairing.
-        $this->app['logger.flash']->clear();
-
-        $response = new CheckResponse();
-        $currentTables = $this->getTableObjects();
-        /** @var $schemaManager AbstractSchemaManager */
-        $schemaManager = $this->app['db']->getSchemaManager();
-        $comparator = new Comparator();
-        $tables = $this->getTablesSchema();
-
-        /** @var $table Table */
-        foreach ($tables as $table) {
-            $tableName = $table->getName();
-
-            // Create the users table.
-            if (!isset($currentTables[$tableName])) {
-
-                /** @var $platform AbstractPlatform */
-                $platform = $this->app['db']->getDatabasePlatform();
-                $queries = $platform->getCreateTableSQL($table, AbstractPlatform::CREATE_INDEXES | AbstractPlatform::CREATE_FOREIGNKEYS);
-                foreach ($queries as $query) {
-                    $this->app['db']->query($query);
-                }
-
-                $response->addTitle($tableName, sprintf('Created table `%s`.', $tableName));
-            } else {
-                $diff = $comparator->diffTable($currentTables[$tableName], $table);
-                if ($diff) {
-                    $diff = $this->cleanupTableDiff($diff);
-                    // diff may be just deleted columns which we have reset above
-                    // only exec and add output if does really alter anything
-                    if ($this->app['db']->getDatabasePlatform()->getAlterTableSQL($diff)) {
-                        $schemaManager->alterTable($diff);
-                        $response->addTitle($tableName, sprintf('Updated `%s` table to match current schema.', $tableName));
-                    }
-                }
-            }
-        }
-
-        return $response;
-    }
-
-    /**
-     * Cleanup a table diff, remove changes we want to keep or fix platform
-     * specific issues.
-     *
-     * @param TableDiff $diff
-     *
-     * @return \Doctrine\DBAL\Schema\TableDiff
-     */
-    protected function cleanupTableDiff(TableDiff $diff)
-    {
-        $baseTables = $this->getBoltTablesNames();
-
-        // Work around reserved column name removal
-        if ($diff->fromTable->getName() === $this->getTablename('cron')) {
-            foreach ($diff->renamedColumns as $key => $col) {
-                if ($col->getName() === 'interim') {
-                    $diff->addedColumns[] = $col;
-                    unset($diff->renamedColumns[$key]);
-                }
-            }
-        }
-
-        // Some diff changes can be ignored… Because… DBAL.
-        $alias = $this->getTableAlias($diff->fromTable->getName());
-        if ($ignored = $this->app['schema.tables'][$alias]->ignoredChanges()) {
-            $this->removeIgnoredChanges($this->app['schema.tables'][$alias], $diff, $ignored);
-        }
-
-        // Don't remove fields from contenttype tables to prevent accidental data removal
-        if (!in_array($diff->fromTable->getName(), $baseTables)) {
-            $diff->removedColumns = [];
-        }
-
-        return $diff;
-    }
-
-    /**
-     * Woraround for the json_array types on SQLite. If only the type has
-     * changed, we ignore to prevent multiple schema warnings.
-     *
-     * @param BaseTable $boltTable
-     * @param TableDiff $diff
-     * @param array     $ignored
-     */
-    protected function removeIgnoredChanges(BaseTable $boltTable, TableDiff $diff, array $ignored)
-    {
-        if ($diff->fromTable->getName() !== $boltTable->getTableName()) {
-            return;
-        }
-
-        if (isset($diff->changedColumns[$ignored['column']])
-            && $diff->changedColumns[$ignored['column']]->changedProperties === [$ignored['property']]) {
-            unset($diff->changedColumns[$ignored['column']]);
-        }
+        return $this->schema;
     }
 
     /**
@@ -347,245 +195,72 @@ class Manager
      *
      * @return \Doctrine\DBAL\Schema\Table[]
      */
-    public function getTablesSchema()
+    public function getSchemaTables()
     {
-        $schema = new Schema();
+        if ($this->schemaTables !== null) {
+            return $this->schemaTables;
+        }
 
-        return array_merge(
-            $this->getBoltTablesSchema($schema),
-            $this->getContentTypeTablesSchema($schema),
-            $this->getExtensionTablesSchema($schema)
+        /** @deprecated Deprecated since 3.0, to be removed in 4.0. */
+        $this->app['schema.builder']['extensions']->addPrefix($this->app['schema.prefix']);
+
+        $schema = new Schema();
+        $tables = array_merge(
+            $this->app['schema.builder']['base']->getSchemaTables($schema),
+            $this->app['schema.builder']['content']->getSchemaTables($schema, $this->config),
+            $this->app['schema.builder']['extensions']->getSchemaTables($schema)
         );
+        $this->schema = $schema;
+
+        return $tables;
+    }
+
+    /**
+     * Get the installed table list from Doctrine.
+     *
+     * @return \Doctrine\DBAL\Schema\Table[]
+     */
+    public function getInstalledTables()
+    {
+        if ($this->installedTables !== null) {
+            return $this->installedTables;
+        }
+
+        /** @var $tables \Doctrine\DBAL\Schema\Table[] */
+        $tables = $this->connection->getSchemaManager()->listTables();
+        foreach ($tables as $table) {
+            $alias = str_replace($this->app['schema.prefix'], '', $table->getName());
+            $this->installedTables[$alias] = $table;
+        }
+
+        return $this->installedTables;
     }
 
     /**
      * This method allows extensions to register their own tables.
      *
-     * @param Callable $generator A generator function that takes the Schema
-     *                            instance and returns a table or an array of tables.
+     * @param callable $generator A generator function that takes the Schema
+     *                            instance and returns a table or an array of
+     *                            tables.
      */
-    public function registerExtensionTable($generator)
+    public function registerExtensionTable(callable $generator)
     {
-        $this->extension_table_generators[] = $generator;
+        $this->app['schema.builder']['extensions']->addTable($generator);
     }
 
     /**
-     * Get all the registered extension tables.
-     *
-     * @param Schema $schema
-     *
-     * @return \Doctrine\DBAL\Schema\Table[]
+     * @return \Bolt\Storage\Database\Schema\Timer
      */
-    protected function getExtensionTablesSchema(Schema $schema)
+    private function getSchemaTimer()
     {
-        $tables = [];
-        foreach ($this->extension_table_generators as $generator) {
-            $table = call_user_func($generator, $schema);
-            // We need to be prepared for generators returning a single table,
-            // as well as generators returning an array of tables.
-            if (is_array($table)) {
-                foreach ($table as $t) {
-                    $tables[] = $t;
-                }
-            } else {
-                $tables[] = $table;
-            }
-        }
-
-        return $tables;
+        return $this->app['schema.timer'];
     }
 
     /**
-     * Get an array of Bolt's internal tables
-     *
-     * @return \Doctrine\DBAL\Schema\Table[]
+     * @return \Bolt\Storage\Database\Schema\Comparison\BaseComparator
      */
-    protected function getBoltTablesNames()
+    private function getSchemaComparator()
     {
-        $baseTables = [];
-        /** @var $table Table */
-        foreach ($this->getBoltTablesSchema(new Schema()) as $table) {
-            $baseTables[] = $table->getName();
-        }
-
-        return $baseTables;
-    }
-
-    /**
-     * @param Schema $schema
-     *
-     * @return \Doctrine\DBAL\Schema\Table[]
-     */
-    protected function getBoltTablesSchema(Schema $schema)
-    {
-        $tables = [];
-        foreach ($this->app['schema.tables']->keys() as $name) {
-            $tables[] = $this->app['schema.tables'][$name]->buildTable($schema, $this->getTablename($name));
-        }
-
-        return $tables;
-    }
-
-    /**
-     * @param Schema $schema
-     *
-     * @return \Doctrine\DBAL\Schema\Table[]
-     */
-    protected function getContentTypeTablesSchema(Schema $schema)
-    {
-        $tables = [];
-
-        // Now, iterate over the contenttypes, and create the tables if they don't exist.
-        foreach ($this->app['config']->get('contenttypes') as $contenttype) {
-            $tablename = $this->getTablename($contenttype['tablename']);
-            $this->mapTableName($tablename, $contenttype['tablename']);
-
-            $tableObj = new ContentType($this->app['db']->getDatabasePlatform());
-            $myTable = $tableObj->buildTable($schema, $tablename);
-
-            if (isset($contenttype['fields']) && is_array($contenttype['fields'])) {
-                $this->addContentTypeTableColumns($tableObj, $myTable, $contenttype['fields']);
-            }
-
-            $tables[] = $myTable;
-        }
-
-        return $tables;
-    }
-
-    /**
-     * Add the custom columns for the ContentType.
-     *
-     * @param \Bolt\Storage\Database\Schema\Table\ContentType $tableObj
-     * @param \Doctrine\DBAL\Schema\Table                     $table
-     * @param array                                           $fields
-     */
-    private function addContentTypeTableColumns(ContentType $tableObj, Table $table, array $fields)
-    {
-        // Check if all the fields are present in the DB.
-        foreach ($fields as $fieldName => $values) {
-            /** @var \Doctrine\DBAL\Platforms\Keywords\KeywordList $reservedList */
-            $reservedList = $this->app['db']->getDatabasePlatform()->getReservedKeywordsList();
-            if ($reservedList->isKeyword($fieldName)) {
-                $error = sprintf(
-                    "You're using '%s' as a field name, but that is a reserved word in %s. Please fix it, and refresh this page.",
-                    $fieldName,
-                    $this->app['db']->getDatabasePlatform()->getName()
-                );
-                $this->app['logger.flash']->error($error);
-                continue;
-            }
-
-            $this->addContentTypeTableColumn($tableObj, $table, $fieldName, $values);
-        }
-    }
-
-    /**
-     * Add a single column to the ContentType table.
-     *
-     * @param \Bolt\Storage\Database\Schema\Table\ContentType $tableObj
-     * @param \Doctrine\DBAL\Schema\Table                     $table
-     * @param string                                          $fieldName
-     * @param array                                           $values
-     */
-    private function addContentTypeTableColumn(ContentType $tableObj, Table $table, $fieldName, array $values)
-    {
-        if ($tableObj->isKnownType($values['type'])) {
-            // Use loose comparison on true as 'true' in YAML is a string
-            $addIndex = isset($values['index']) && $values['index'] == 'true';
-            // Add the contenttype's specific fields
-            $tableObj->addCustomFields($fieldName, $values['type'], $addIndex);
-        } elseif ($handler = $this->app['config']->getFields()->getField($values['type'])) {
-            // Add template fields
-            /** @var $handler \Bolt\Storage\Field\FieldInterface */
-            $table->addColumn($fieldName, $handler->getStorageType(), $handler->getStorageOptions());
-        }
-    }
-
-    /**
-     * Get the tablename with prefix from a given $name.
-     *
-     * @param $name
-     *
-     * @return string
-     */
-    public function getTablename($name)
-    {
-        $name = str_replace('-', '_', $this->app['slugify']->slugify($name));
-        $tablename = sprintf('%s%s', $this->getTablenamePrefix(), $name);
-
-        return $tablename;
-    }
-
-    /**
-     * Get the table alias name.
-     *
-     * @param $name
-     *
-     * @return string
-     */
-    protected function getTableAlias($tableName)
-    {
-        return str_replace($this->getTablenamePrefix(), '', $tableName);
-    }
-
-    /**
-     * Get the tablename prefix.
-     *
-     * @return string
-     */
-    protected function getTablenamePrefix()
-    {
-        if ($this->prefix !== null) {
-            return $this->prefix;
-        }
-
-        $this->prefix = $this->app['config']->get('general/database/prefix', 'bolt_');
-
-        // Make sure prefix ends in '_'. Prefixes without '_' are lame.
-        if ($this->prefix[strlen($this->prefix) - 1] != '_') {
-            $this->prefix .= '_';
-        }
-
-        return $this->prefix;
-    }
-
-    /**
-     * Get the 'validity' timestamp's file name.
-     *
-     * @return string
-     */
-    private function getValidityTimestampFilename()
-    {
-        if (empty($this->integrityCachePath)) {
-            $this->integrityCachePath = $this->app['resources']->getPath('cache');
-        }
-
-        return $this->integrityCachePath . '/' . self::INTEGRITY_CHECK_TS_FILENAME;
-    }
-
-    /**
-     * Map a table name's value.
-     *
-     * @param string $from
-     * @param string $to
-     */
-    protected function mapTableName($from, $to)
-    {
-        $this->tableMap[$from] = $to;
-    }
-
-    /**
-     * Get the stored table name key.
-     *
-     * @param string $table
-     *
-     * @return string
-     */
-    public function getKeyForTable($table)
-    {
-        if (isset($this->tableMap[$table])) {
-            return $this->tableMap[$table];
-        }
+        return $this->app['schema.comparator'];
     }
 }

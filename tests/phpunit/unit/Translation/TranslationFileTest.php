@@ -17,7 +17,6 @@ class TranslationFileTest extends BoltUnitTest
         $app = $this->getApp();
         $tr = new TranslationFile($app, 'translations', 'en_GB');
         $this->assertEquals('translations', \PHPUnit_Framework_Assert::readAttribute($tr, 'domain'));
-        $this->assertEquals('en_GB', \PHPUnit_Framework_Assert::readAttribute($tr, 'locale'));
     }
 
     public function testPath()
@@ -25,7 +24,7 @@ class TranslationFileTest extends BoltUnitTest
         $app = $this->getApp();
         $tr = new TranslationFile($app, 'translations', 'en_GB');
         $path = $tr->path();
-        $this->assertEquals(TEST_ROOT . '/app/resources/translations/en_GB/translations.en_GB.yml', $path[0]);
+        $this->assertEquals(PHPUNIT_WEBROOT . '/app/resources/translations/en_GB/translations.en_GB.yml', $path[0]);
     }
 
     public function testContentInfos()

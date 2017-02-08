@@ -1,19 +1,32 @@
 <?php
+
 namespace Bolt\Storage;
 
-use Bolt\Storage;
+use Bolt\Exception\InvalidRepositoryException;
+use Bolt\Exception\StorageException;
+use Bolt\Legacy\Storage;
+use Bolt\Storage\Collection\CollectionManager;
+use Bolt\Storage\Mapping\ClassMetadata;
 use Bolt\Storage\Mapping\MetadataDriver;
 use Doctrine\Common\Persistence\Mapping\ClassMetadata as ClassMetadataInterface;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Query\Expression\ExpressionBuilder;
 use Doctrine\DBAL\Query\QueryBuilder;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
- * Manages all loaded entities across application, provides access to Repository Classes.
+ * Manages all loaded entities across application, provides access to Repository
+ * Classes.
+ *
+ * Legacy methods:
+ *
+ * @method array getContentType($contenttypeslug)
+ * @method void  publishTimedRecords($contenttype)
+ * @method void  depublishExpiredRecords($contenttype)
  */
-class EntityManager
+class EntityManager implements EntityManagerInterface
 {
     /** @var Connection */
     protected $conn;
@@ -23,6 +36,12 @@ class EntityManager
     protected $mapping;
     /** @var LoggerInterface */
     protected $logger;
+    /** @var Entity\Builder */
+    protected $builder;
+    /** @var FieldManager */
+    protected $fieldManager;
+    /** @var CollectionManager */
+    protected $collectionManager;
     /** @var array */
     protected $repositories = [];
     /** @var array */
@@ -55,6 +74,120 @@ class EntityManager
     public function createQueryBuilder()
     {
         return new QueryBuilder($this->conn);
+    }
+
+    /**
+     * @return ExpressionBuilder
+     */
+    public function createExpressionBuilder()
+    {
+        return new ExpressionBuilder($this->conn);
+    }
+
+    /**
+     * Creates an entity of the given class, with the data supplied.
+     *
+     * @param string                 $className The type of entity to create
+     * @param array                  $data      The data to use to hydrate the new entity
+     * @param ClassMetadataInterface $metadata
+     *
+     * @return Entity\Entity
+     */
+    public function create($className, $data, ClassMetadataInterface $metadata = null)
+    {
+        $repo = $this->getRepository($className);
+
+        return $repo->create($data, $metadata);
+    }
+
+    /**
+     * Get an entity builder instance for a given class.
+     *
+     * @param string        $className
+     * @param ClassMetadata $classMetadata
+     *
+     * @return Entity\Builder
+     */
+    public function getEntityBuilder($className = null, ClassMetadata $classMetadata = null)
+    {
+        $builder = new Entity\Builder($this->getMapper(), $this->getFieldManager());
+
+        if ($className !== null) {
+            $builder->setClass($className);
+        }
+
+        if ($classMetadata !== null) {
+            $builder->setClassMetadata($classMetadata);
+        }
+
+        return $builder;
+    }
+
+    /**
+     * Set an entity builder instance.
+     *
+     * @param Entity\Builder $builder
+     *
+     * @return Entity\Builder
+     */
+    public function setEntityBuilder(Entity\Builder $builder)
+    {
+        $this->builder = $builder;
+    }
+
+    /**
+     * @return FieldManager
+     */
+    public function getFieldManager()
+    {
+        $manager = $this->fieldManager;
+        $manager->setEntityManager($this);
+
+        return $manager;
+    }
+
+    /**
+     * @param FieldManager $fieldManager
+     */
+    public function setFieldManager(FieldManager $fieldManager)
+    {
+        $this->fieldManager = $fieldManager;
+    }
+
+    /**
+     * @return CollectionManager
+     */
+    public function getCollectionManager()
+    {
+        $manager = $this->collectionManager;
+        $manager->setEntityManager($this);
+
+        return $manager;
+    }
+
+    /**
+     * @param CollectionManager $collectionManager
+     */
+    public function setCollectionManager(CollectionManager $collectionManager)
+    {
+        $this->collectionManager = $collectionManager;
+    }
+
+    /**
+     * Shorthand access method to create collection. Consults aliases to allow short names.
+     *
+     * @param $className
+     *
+     * @return mixed
+     */
+    public function createCollection($className)
+    {
+        $className = (string) $className;
+        if (array_key_exists($className, $this->aliases)) {
+            $className = $this->aliases[$className];
+        }
+
+        return $this->getCollectionManager()->create($className);
     }
 
     /**
@@ -111,22 +244,27 @@ class EntityManager
     }
 
     /**
-     * Gets the repository for a class.
-     *
-     * @param string $className
-     *
-     * @return Repository
+     * {@inheritdoc}
      */
     public function getRepository($className)
     {
+        $className = (string) $className;
         if (array_key_exists($className, $this->aliases)) {
-            $classMetadata = $this->getMapper()->loadMetadataForClass($this->aliases[$className]);
-        } else {
+            $className = $this->aliases[$className];
+        }
+
+        try {
             $classMetadata = $this->getMapper()->loadMetadataForClass($className);
+        } catch (StorageException $e) {
+            throw new InvalidRepositoryException("Attempted to load repository for invalid class or alias: $className. Check that the class, alias or contenttype definition is correct.");
         }
 
         if (array_key_exists($className, $this->repositories)) {
             $repoClass = $this->repositories[$className];
+            if (is_callable($repoClass)) {
+                return call_user_func_array($repoClass, [$this, $classMetadata]);
+            }
+
             return new $repoClass($this, $classMetadata);
         }
 
@@ -136,6 +274,7 @@ class EntityManager
             if (array_key_exists($full, $this->repositories)) {
                 $classMetadata = $this->getMapper()->loadMetadataForClass($full);
                 $repoClass = $this->repositories[$full];
+
                 return new $repoClass($this, $classMetadata);
             }
         }
@@ -193,12 +332,22 @@ class EntityManager
     public function getDefaultRepositoryFactory($classMetadata)
     {
         if (!is_callable($this->defaultRepositoryFactory)) {
-            throw new \RuntimeException("Unable to handle unmapped data without a defaultRepositoryFactory set", 1);
+            throw new \RuntimeException('Unable to handle unmapped data without a defaultRepositoryFactory set', 1);
         }
 
         $factory = $this->defaultRepositoryFactory;
 
         return $factory($classMetadata);
+    }
+
+    /**
+     * Gets the DBAL Driver Connection.
+     *
+     * @return Connection
+     */
+    public function getConnection()
+    {
+        return $this->conn;
     }
 
     /**
@@ -277,7 +426,7 @@ class EntityManager
      */
     public function __call($method, $args)
     {
-        //$this->getLogger()->warning("[DEPRECATED] Accessing ['storage']->$method is no longer supported and will be removed in a future version.");
+        //$this->getLogger()->warning('[DEPRECATED] Accessing ['storage']->$method is no longer supported and will be removed in a future version.');
         return call_user_func_array([$this->legacy(), $method], $args);
     }
 
@@ -290,7 +439,7 @@ class EntityManager
      * @param array  $pager
      * @param array  $whereparameters
      *
-     * @return \Bolt\Content|\Bolt\Content[]
+     * @return \Bolt\Legacy\Content|\Bolt\Legacy\Content[]
      */
     public function getContent($textquery, $parameters = [], &$pager = [], $whereparameters = [])
     {

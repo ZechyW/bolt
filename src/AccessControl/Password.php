@@ -1,10 +1,13 @@
 <?php
 namespace Bolt\AccessControl;
 
-use Bolt\Application;
+use Bolt\Events\AccessControlEvents;
 use Bolt\Storage\Entity;
+use Bolt\Storage\Repository\UsersRepository;
 use Bolt\Translation\Translator as Trans;
-use Hautelook\Phpass\PasswordHash;
+use Carbon\Carbon;
+use Silex\Application;
+use Symfony\Component\EventDispatcher\Event;
 
 /**
  * Password handling.
@@ -13,7 +16,7 @@ use Hautelook\Phpass\PasswordHash;
  */
 class Password
 {
-    /** @var \Bolt\Application $app */
+    /** @var \Silex\Application $app */
     protected $app;
 
     public function __construct(Application $app)
@@ -41,15 +44,14 @@ class Password
     {
         $password = false;
 
-        if ($userEntity = $this->app['storage']->getRepository('Bolt\Storage\Entity\Users')->getUser($username)) {
+        /** @var UsersRepository $repo */
+        $repo = $this->app['storage']->getRepository('Bolt\Storage\Entity\Users');
+        if ($userEntity = $repo->getUser($username)) {
             $password = $this->app['randomgenerator']->generateString(12);
 
-            $hasher = new PasswordHash($this->app['authentication.hash.strength'], true);
-            $hashedpassword = $hasher->HashPassword($password);
-
-            $userEntity->setPassword($hashedpassword);
-            $userEntity->setShadowpassword('');
-            $userEntity->setShadowtoken('');
+            $userEntity->setPassword($password);
+            $userEntity->setShadowpassword(null);
+            $userEntity->setShadowtoken(null);
             $userEntity->setShadowvalidity(null);
 
             $this->app['storage']->getRepository('Bolt\Storage\Entity\Users')->save($userEntity);
@@ -68,31 +70,37 @@ class Password
      *
      * @param string $token
      * @param string $remoteIP
+     * @param Event  $event
      *
-     * @return boolean
+     * @return bool
      */
-    public function resetPasswordConfirm($token, $remoteIP)
+    public function resetPasswordConfirm($token, $remoteIP, Event $event)
     {
         // Hash the remote caller's IP with the token
         $tokenHash = md5($token . '-' . str_replace('.', '-', $remoteIP));
 
-        if ($userEntity = $this->app['storage']->getRepository('Bolt\Storage\Entity\Users')->getUserShadowAuth($tokenHash)) {
+        /** @var UsersRepository $repo */
+        $repo = $this->app['storage']->getRepository('Bolt\Storage\Entity\Users');
+        if ($userEntity = $repo->getUserShadowAuth($tokenHash)) {
+            $userAuth = $repo->getUserAuthData($userEntity->getId());
             // Update entries
-            $userEntity->setPassword($userEntity->getShadowpassword());
-            $userEntity->setShadowpassword('');
-            $userEntity->setShadowtoken('');
+            $userEntity->setPassword($userAuth->getShadowpassword());
+            $userEntity->setShadowpassword(null);
+            $userEntity->setShadowtoken(null);
             $userEntity->setShadowvalidity(null);
-            $userEntity->setShadowSave(true);
 
             $this->app['storage']->getRepository('Bolt\Storage\Entity\Users')->save($userEntity);
 
-            $this->app['logger.flash']->success(Trans::__('Password reset successful! You can now log on with the password that was sent to you via email.'));
+            $this->app['logger.flash']->clear();
+            $this->app['logger.flash']->success(Trans::__('general.access-control.reset-successful'));
+            $this->app['dispatcher']->dispatch(AccessControlEvents::RESET_SUCCESS, $event);
 
             return true;
         } else {
             // That was not a valid token, or too late, or not from the correct IP.
             $this->app['logger.system']->error('Somebody tried to reset a password with an invalid token.', ['event' => 'authentication']);
-            $this->app['logger.flash']->error(Trans::__('Password reset not successful! Either the token was incorrect, or you were too late, or you tried to reset the password from a different IP-address.'));
+            $this->app['logger.flash']->error(Trans::__('general.access-control.reset-failed'));
+            $this->app['dispatcher']->dispatch(AccessControlEvents::RESET_FAILURE, $event);
 
             return false;
         }
@@ -103,27 +111,29 @@ class Password
      *
      * @param string $username
      * @param string $remoteIP
+     * @param Event  $event
      *
-     * @return boolean
+     * @return bool
      */
-    public function resetPasswordRequest($username, $remoteIP)
+    public function resetPasswordRequest($username, $remoteIP, Event $event)
     {
-        $userEntity = $this->app['storage']->getRepository('Bolt\Storage\Entity\Users')->getUser($username);
+        /** @var UsersRepository $repo */
+        $repo = $this->app['storage']->getRepository('Bolt\Storage\Entity\Users');
+        /** @var Entity\Users $userEntity */
+        $userEntity = $repo->getUser($username);
 
         if (!$userEntity) {
             // For safety, this is the message we display, regardless of whether user exists.
-            $this->app['logger.flash']->info(Trans::__("A password reset link has been sent to '%user%'.", ['%user%' => $username]));
+            $this->app['logger.flash']->clear();
+            $this->app['logger.flash']->info(Trans::__('page.login.password-reset-link-sent', ['%user%' => $username]));
+            $this->app['dispatcher']->dispatch(AccessControlEvents::RESET_FAILURE, $event);
 
             return false;
         }
 
-        $validity = new \DateTime();
-        $delay = new \DateInterval('PT2H');
-
         // Generate shadow password and hash
-        $hasher = new PasswordHash($this->app['authentication.hash.strength'], true);
         $shadowPassword = $this->app['randomgenerator']->generateString(12);
-        $shadowPasswordHash = $hasher->HashPassword($shadowPassword);
+        $shadowPasswordHash = $this->app['password_factory']->createHash($shadowPassword, '$2y$');
 
         // Generate shadow token and hash
         $shadowToken = $this->app['randomgenerator']->generateString(32);
@@ -132,17 +142,18 @@ class Password
         // Set the shadow password and related stuff in the database.
         $userEntity->setShadowpassword($shadowPasswordHash);
         $userEntity->setShadowtoken($shadowTokenHash);
-        $userEntity->setShadowvalidity($validity->add($delay));
+        $userEntity->setShadowvalidity(Carbon::create()->addHours(2));
 
         $this->app['storage']->getRepository('Bolt\Storage\Entity\Users')->save($userEntity);
 
         $mailoptions = $this->app['config']->get('general/mailoptions'); // PHP 5.4 compatibility
         if (empty($mailoptions)) {
-            $this->app['logger.flash']->error(Trans::__("The email configuration setting 'mailoptions' hasn't been set. Bolt may be unable to send password reset."));
+            $this->app['logger.flash']->danger(Trans::__('general.phrase.error-mail-options-not-set'));
         }
 
         // Sent the password reset notification
         $this->resetPasswordNotification($userEntity, $shadowPassword, $shadowToken);
+        $this->app['dispatcher']->dispatch(AccessControlEvents::RESET_REQUEST, $event);
 
         return true;
     }
@@ -165,26 +176,31 @@ class Password
 
         // Compile the email with the shadow password and reset link.
         $mailhtml = $this->app['render']->render(
-            'mail/passwordreset.twig',
+            '@bolt/mail/passwordreset.twig',
             [
                 'user'           => $userEntity,
                 'shadowpassword' => $shadowpassword,
                 'shadowtoken'    => $shadowtoken,
                 'shadowvalidity' => date('Y-m-d H:i:s', strtotime('+2 hours')),
-                'shadowlink'     => $shadowlink
+                'shadowlink'     => $shadowlink,
             ]
-        );
+        )->getContent();
 
         $subject = sprintf('[ Bolt / %s ] Password reset.', $this->app['config']->get('general/sitename'));
+        $name = $this->app['config']->get('general/mailoptions/senderName', $this->app['config']->get('general/sitename'));
+        $email = $this->app['config']->get('general/mailoptions/senderMail', $userEntity->getEmail());
+        $from = [$email => $name];
 
         $message = $this->app['mailer']
             ->createMessage('message')
             ->setSubject($subject)
-            ->setFrom([$this->app['config']->get('general/mailoptions/senderMail', $userEntity->getEmail()) => $this->app['config']->get('general/mailoptions/senderName', $this->app['config']->get('general/sitename'))])
-            ->setTo([$userEntity['email'] => $userEntity['displayname']])
+            ->setFrom($from)
+            ->setReplyTo($from)
+            ->setTo([$userEntity->getEmail() => $userEntity->getDisplayname()])
             ->setBody(strip_tags($mailhtml))
             ->addPart($mailhtml, 'text/html')
         ;
+
         $failed = true;
         $failedRecipients = [];
 
@@ -204,7 +220,7 @@ class Password
 
         if ($failed) {
             $this->app['logger.system']->error("Failed to send password request sent to '" . $userEntity['displayname'] . "'.", ['event' => 'authentication']);
-            $this->app['logger.flash']->error(Trans::__("Failed to send password request. Please check the email settings."));
+            $this->app['logger.flash']->error(Trans::__('general.phrase.error-send-password-request'));
         }
     }
 }

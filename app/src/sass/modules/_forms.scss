@@ -31,23 +31,27 @@ label {
         margin-bottom: 5px;
         padding-top: 4px;
     }
-}
-
-.form-group {
-    margin-bottom: 20px;
 
     .form-group {
-        margin-bottom: 10px;
+        margin-top: 24px;
+        margin-bottom: 12px;
+
+        @media (max-width: 640px) {
+            margin-top: 16px;
+            margin-bottom: 4px;
+        }
+
+        .form-group:first-of-type {
+            margin-top: 0px;
+        }
+
     }
+
 }
 
 .button-wrap {
     margin: 8px 0 4px;
     position: relative;
-
-    .btn {
-        margin: 0 4px 2px 0;
-    }
 }
 
 input[type="checkbox"] {
@@ -65,40 +69,6 @@ fieldset.checkbox {
 
     div {
         margin: 0.3em 0 0.5em;
-    }
-}
-
-.file-progress {
-    width: 20%;
-    display: none;
-    margin-bottom: 0;
-}
-
-.uploading-list-element {
-    position: relative;
-
-    @include respond-to(mid-mobile) {
-        padding-right: 160px;
-    }
-
-    @include respond-to(medium-screens) {
-        padding-right: 210px;
-    }
-}
-
-.files-progress {
-    margin-bottom: 0;
-    height: 1em;
-
-    @include respond-to(mid-mobile) {
-        position: absolute;
-        right: 0;
-        top: 0;
-        width: 150px;
-    }
-
-    @include respond-to(medium-screens) {
-        width: 200px;
     }
 }
 
@@ -121,35 +91,37 @@ fieldset.checkbox {
 #filtertabs {
     margin-bottom: 16px;
     border: 0;
-
-    @include respond-to(medium-screens) {
-        border-bottom: 1px solid #BBB;
-    }
+    border-bottom: 1px solid darken($filtertabs, 10);;
 
     a {
-        color: #666;
-        background-color: desaturate(lighten($boltblue, 60%), 30);
-        border: 1px solid #BBB;
+        color: $filtertab-color;
+        background-color: $filtertabs; // desaturate(lighten($boltblue, 60%), 30);
+        border: 1px solid darken($filtertabs, 10);
         cursor: pointer;
         padding: 5px 12px;
+        font-weight: normal;
 
         &:hover {
             color: #444;
             background-color: #FFF !important;
             border-bottom: 0;
         }
+
+        @media (max-width: 767px) {
+            padding: 4px 6px;
+        }
     }
 
     li {
-        margin-left: -3px;
+        margin-right: 2px;
 
         &.active {
-            margin-top: -5px;
 
             a {
-                background-color: #F8F8F8;
-                color: #333;
-                padding: 7px 12px 8px 12px;
+                background-color: $basebgcolour;
+                border: 1px solid darken($filtertabs, 20);
+                border-bottom: 1px solid $basebgcolour;
+                color: $filtertab-active-color;
             }
         }
     }
@@ -164,4 +136,9 @@ div.datetime-container {
         width: 9px;
         overflow: visible;
     }
+}
+
+form .progress {
+    height: 7px;
+    margin: 2px 0 0 0;
 }

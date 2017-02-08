@@ -3,6 +3,7 @@
 namespace Bolt\EventListener;
 
 use Bolt\Asset\Snippet\Queue;
+use Bolt\Asset\Snippet\Snippet;
 use Bolt\Asset\Target;
 use Bolt\Config;
 use Bolt\Configuration\ResourceManager;
@@ -46,7 +47,12 @@ class SnippetListener implements EventSubscriberInterface
      */
     public function onResponse(FilterResponseEvent $event)
     {
-        if (!$this->isEnabled($event)) {
+        if (!$event->isMasterRequest()) {
+            return;
+        }
+
+        $request = $event->getRequest();
+        if (Zone::isAsync($request)) {
             return;
         }
 
@@ -55,26 +61,11 @@ class SnippetListener implements EventSubscriberInterface
             return;
         }
 
-        $this->addSnippets();
-
-        $response->setContent($this->render->postProcess($response));
-    }
-
-    /**
-     * Check if snippets are allowed for this request.
-     *
-     * @param FilterResponseEvent $event
-     */
-    protected function isEnabled(FilterResponseEvent $event)
-    {
-        if (!$event->isMasterRequest()) {
-            return false;
-        }
-        if (Zone::isFrontend($event->getRequest())) {
-            return true;
+        if (!$event->getRequest()->isXmlHttpRequest()) {
+            $this->addSnippets();
         }
 
-        return $event->getRequest()->attributes->get('allow_snippets', false);
+        $this->render->postProcess($request, $response);
     }
 
     /**
@@ -82,17 +73,29 @@ class SnippetListener implements EventSubscriberInterface
      */
     protected function addSnippets()
     {
-        $this->queue->add(Target::END_OF_HEAD, '<meta name="generator" content="Bolt">');
+        $generatorSnippet = (new Snippet())
+            ->setLocation(Target::END_OF_HEAD)
+            ->setCallback('<meta name="generator" content="Bolt">')
+        ;
+        $this->queue->add($generatorSnippet);
 
         if ($this->config->get('general/canonical')) {
             $canonical = $this->resources->getUrl('canonicalurl');
-            $this->queue->add(Target::END_OF_HEAD, $this->encode('<link rel="canonical" href="%s">', $canonical));
+            $canonicalSnippet = (new Snippet())
+                ->setLocation(Target::END_OF_HEAD)
+                ->setCallback($this->encode('<link rel="canonical" href="%s">', $canonical))
+            ;
+            $this->queue->add($canonicalSnippet);
         }
 
         if ($favicon = $this->config->get('general/favicon')) {
             $host = $this->resources->getUrl('hosturl');
             $theme = $this->resources->getUrl('theme');
-            $this->queue->add(Target::END_OF_HEAD, $this->encode('<link rel="shortcut icon" href="%s%s%s">', $host, $theme, $favicon));
+            $faviconSnippet = (new Snippet())
+                ->setLocation(Target::END_OF_HEAD)
+                ->setCallback($this->encode('<link rel="shortcut icon" href="%s%s%s">', $host, $theme, $favicon))
+            ;
+            $this->queue->add($faviconSnippet);
         }
     }
 
@@ -107,9 +110,12 @@ class SnippetListener implements EventSubscriberInterface
     {
         $args = func_get_args();
         array_shift($args);
-        $args = array_map(function ($str) {
-            return htmlspecialchars($str, ENT_QUOTES);
-        }, $args);
+        $args = array_map(
+            function ($str) {
+                return htmlspecialchars($str, ENT_QUOTES);
+            },
+            $args
+        );
         array_unshift($args, $str);
 
         return call_user_func_array('sprintf', $args);

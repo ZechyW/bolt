@@ -2,11 +2,14 @@
 
 namespace Bolt\Controller\Backend;
 
+use Bolt;
 use Bolt\Exception\PackageManagerException;
 use Bolt\Translation\Translator as Trans;
-use Silex;
+use Composer\Package\PackageInterface;
+use Silex\Application;
 use Silex\ControllerCollection;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -26,6 +29,15 @@ class Extend extends BackendBase
 
         $c->get('/check', 'check')
             ->bind('check');
+
+        $c->get('/depends', 'dependsPackage')
+            ->bind('dependsPackage');
+
+        $c->get('/prohibits', 'prohibitsPackage')
+            ->bind('prohibitsPackage');
+
+        $c->get('/dumpAutoload', 'dumpAutoload')
+            ->bind('dumpAutoload');
 
         $c->get('/update', 'update')
             ->bind('update');
@@ -58,17 +70,18 @@ class Extend extends BackendBase
     /**
      * Middleware function to check whether a user is logged on.
      *
-     * @param Request            $request
-     * @param \Silex\Application $app
+     * @param Request     $request
+     * @param Application $app
+     * @param string      $roleRoute
      *
      * @return null|\Symfony\Component\HttpFoundation\RedirectResponse
      */
-    public function before(Request $request, Silex\Application $app, $roleRoute = null)
+    public function before(Request $request, Application $app, $roleRoute = null)
     {
         return parent::before($request, $app, 'extensions');
     }
 
-    public function boot(Silex\Application $app)
+    public function boot(Application $app)
     {
     }
 
@@ -79,7 +92,56 @@ class Extend extends BackendBase
      */
     public function check()
     {
-        return $this->json($this->manager()->checkPackage());
+        try {
+            return $this->json($this->manager()->checkPackage());
+        } catch (PackageManagerException $e) {
+            return $this->getJsonException($e);
+        }
+    }
+
+    /**
+     * Find "depends" package dependencies.
+     *
+     * @param Request $request
+     *
+     * @return JsonResponse
+     */
+    public function dependsPackage(Request $request)
+    {
+        $package = $request->get('needle');
+        $constraint = $request->get('constraint', '*');
+
+        try {
+            $response = $this->manager()->dependsPackage($package, $constraint);
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
+
+        return $this->json($response);
+    }
+
+    /**
+     * Dumps the autoloader.
+     *
+     * @throws PackageManagerException
+     *
+     * @return Response
+     */
+    public function dumpAutoload()
+    {
+        try {
+            $response = $this->manager()->dumpAutoload();
+        } catch (PackageManagerException $e) {
+            return $this->getJsonException($e);
+        }
+
+        if ($response === 0) {
+            $this->app['logger.system']->info($this->manager()->getOutput(), ['event' => 'extensions']);
+
+            return new Response($this->manager()->getOutput());
+        }
+
+        throw new PackageManagerException($this->manager()->getOutput(), $response);
     }
 
     /**
@@ -97,7 +159,7 @@ class Extend extends BackendBase
         $newName = $request->get('name');
 
         if (empty($theme)) {
-            return new Response(Trans::__('No theme name found. Theme is not generated.'));
+            return new Response(Trans::__('page.extend.theme.generation.missing.name'));
         }
 
         if (! $newName) {
@@ -107,22 +169,22 @@ class Extend extends BackendBase
         $source = $this->resources()->getPath('extensions/vendor/' . $theme);
         $destination = $this->resources()->getPath('themebase/' . $newName);
         if (is_dir($source)) {
+            $filesystem = new Filesystem();
             try {
-                $filesystem = new Filesystem();
                 $filesystem->mkdir($destination);
                 $filesystem->mirror($source, $destination);
 
-                if (file_exists($destination . "/config.yml.dist")) {
-                    $filesystem->copy($destination . "/config.yml.dist", $destination . "/config.yml");
+                if (file_exists($destination . '/config.yml.dist')) {
+                    $filesystem->copy($destination . '/config.yml.dist', $destination . '/config.yml');
                 }
 
-                return new Response(Trans::__('Theme successfully generated. You can now edit it directly from your theme folder.'));
+                return new Response(Trans::__('page.extend.theme.generation.success'));
             } catch (\Exception $e) {
-                return new Response(Trans::__('We were unable to generate the theme. It is likely that your theme directory is not writable by Bolt. Check the permissions and try reinstalling.'));
+                return new Response(Trans::__('page.extend.theme.generation.failure'));
             }
         }
 
-        throw new PackageManagerException("Invalid theme source directory: $source");
+        return $this->getJsonException(new PackageManagerException(Trans::__('page.extend.message.invalid-theme-source-dir', ['%SOURCE%', $source])));
     }
 
     /**
@@ -140,22 +202,25 @@ class Extend extends BackendBase
     {
         $package = $request->get('package');
         $version = $request->get('version');
-
-        $response = $this->manager()->requirePackage(
-            [
-                'name'    => $package,
-                'version' => $version
-            ]
-        );
+        try {
+            $response = $this->manager()->requirePackage(
+                [
+                    'name'    => $package,
+                    'version' => $version,
+                ]
+            );
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
 
         if ($response === 0) {
             $this->app['extensions.stats']->recordInstall($package, $version);
             $this->app['logger.system']->info("Installed $package $version", ['event' => 'extensions']);
 
             return new Response($this->manager()->getOutput());
-        } else {
-            throw new PackageManagerException($this->manager()->getOutput(), $response);
         }
+
+        return $this->getJsonException(new PackageManagerException($this->manager()->getOutput(), $response));
     }
 
     /**
@@ -169,13 +234,17 @@ class Extend extends BackendBase
      */
     public function installAll()
     {
-        $response = $this->manager()->installPackages();
+        try {
+            $response = $this->manager()->installPackages();
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
 
         if ($response === 0) {
             return new Response($this->manager()->getOutput());
-        } else {
-            throw new PackageManagerException($this->manager()->getOutput(), $response);
         }
+
+        return $this->getJsonException(new PackageManagerException($this->manager()->getOutput(), $response));
     }
 
     /**
@@ -187,7 +256,11 @@ class Extend extends BackendBase
      */
     public function installed()
     {
-        return $this->json($this->manager()->getAllPackages());
+        try {
+            return $this->json($this->manager()->getAllPackages());
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
     }
 
     /**
@@ -198,14 +271,18 @@ class Extend extends BackendBase
     public function installInfo(Request $request)
     {
         $package = $request->get('package');
-        $versions = ['dev' => [], 'stable' => []];
-        $info = $this->app['extend.info']->info($package, $this->app['bolt_version']);
-        if (isset($info->version)) {
+        $versions = ['dev' => [], 'beta' => [], 'RC' => [], 'stable' => []];
+
+        try {
+            $info = $this->app['extend.info']->info($package, Bolt\Version::forComposer());
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
+
+        if (isset($info->version) && is_array($info->version)) {
             foreach ($info->version as $version) {
                 $versions[$version->stability][] = $version;
             }
-        } else {
-            $versions = ['error' => true, 'dev' => [], 'stable' => []];
         }
 
         return $this->json($versions);
@@ -218,7 +295,11 @@ class Extend extends BackendBase
      */
     public function installPackage()
     {
-        return $this->render('extend/install-package.twig', $this->getRenderContext());
+        try {
+            return $this->render('@bolt/extend/_action-modal.twig', $this->getRenderContext());
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
     }
 
     /**
@@ -228,7 +309,11 @@ class Extend extends BackendBase
      */
     public function overview()
     {
-        return $this->render('extend/extend.twig', $this->getRenderContext());
+        try {
+            return $this->render('@bolt/extend/extend.twig', $this->getRenderContext());
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
     }
 
     /**
@@ -236,15 +321,54 @@ class Extend extends BackendBase
      *
      * @param Request $request
      *
+     * @throws PackageManagerException]
+     *
      * @return \Symfony\Component\HttpFoundation\JsonResponse
      */
     public function packageInfo(Request $request)
     {
-        $package = $request->get('package');
-        $version = $request->get('version');
-        $response = $this->manager()->showPackage('installed', $package, $version);
+        $packageName = $request->get('package');
+        $reqVersion = $request->get('version');
 
-        return $this->json($this->manager()->formatPackageResponse($response));
+        try {
+            $response = $this->manager()->showPackage('installed', $packageName, $reqVersion);
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
+
+        if (isset($response[$packageName]['package'])) {
+            /** @var PackageInterface $package */
+            $package = $response[$packageName]['package'];
+
+            return $this->json([
+                'name'    => $packageName,
+                'version' => $package->getPrettyVersion(),
+                'type'    => $package->getType(),
+            ]);
+        }
+
+        return $this->getJsonException(new PackageManagerException(Trans::__('page.extend.message.package-install-info-fail', ['%PACKAGE%' => $packageName, '%VERSION%' => $reqVersion])));
+    }
+
+    /**
+     * Find "prohibits" dependencies.
+     *
+     * @param Request $request
+     *
+     * @return JsonResponse
+     */
+    public function prohibitsPackage(Request $request)
+    {
+        $package = $request->get('package');
+        $constraint = $request->get('constraint', '*');
+
+        try {
+            $response = $this->manager()->prohibitsPackage($package, $constraint);
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
+
+        return $this->json($response);
     }
 
     /**
@@ -261,15 +385,19 @@ class Extend extends BackendBase
         $package = $request->get('package') ? $request->get('package') : null;
         $update = $package ? [$package] : [];
 
-        $response = $this->app['extend.manager']->updatePackage($update);
+        try {
+            $response = $this->app['extend.manager']->updatePackage($update);
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
 
         if ($response === 0) {
             $this->app['logger.system']->info("Updated $package", ['event' => 'extensions']);
 
             return $this->json($this->manager()->getOutput());
-        } else {
-            throw new PackageManagerException($this->manager()->getOutput(), $response);
         }
+
+        return $this->getJsonException(new PackageManagerException($this->manager()->getOutput(), $response));
     }
 
     /**
@@ -285,15 +413,19 @@ class Extend extends BackendBase
     {
         $package = $request->get('package');
 
-        $response = $this->manager()->removePackage([$package]);
+        try {
+            $response = $this->manager()->removePackage([$package]);
+        } catch (\Exception $e) {
+            return $this->getJsonException($e);
+        }
 
         if ($response === 0) {
             $this->app['logger.system']->info("Uninstalled $package", ['event' => 'extensions']);
 
             return new Response($this->manager()->getOutput());
-        } else {
-            throw new PackageManagerException($this->manager()->getOutput(), $response);
         }
+
+        return $this->getJsonException(new PackageManagerException($this->manager()->getOutput(), $response));
     }
 
     /**
@@ -311,7 +443,7 @@ class Extend extends BackendBase
             'writeable'      => $this->app['extend.writeable'],
             'online'         => $this->app['extend.online'],
             'extensionsPath' => $extensionsPath,
-            'site'           => $this->app['extend.site']
+            'site'           => $this->app['extend.site'],
         ];
     }
 
@@ -321,5 +453,26 @@ class Extend extends BackendBase
     protected function manager()
     {
         return $this->app['extend.manager'];
+    }
+
+    /**
+     * Return an exception formatted as JSON.
+     *
+     * @param \Exception $e
+     *
+     * @return JsonResponse
+     */
+    private function getJsonException(\Exception $e)
+    {
+        $error = [
+            'error' => [
+                'type'    => get_class($e),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'message' => $e->getMessage(),
+            ],
+        ];
+
+        return new JsonResponse($error, Response::HTTP_INTERNAL_SERVER_ERROR);
     }
 }

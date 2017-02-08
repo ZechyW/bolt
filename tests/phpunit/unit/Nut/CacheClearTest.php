@@ -1,4 +1,5 @@
 <?php
+
 namespace Bolt\Tests\Nut;
 
 use Bolt\Nut\CacheClear;
@@ -20,33 +21,28 @@ class CacheClearTest extends BoltUnitTest
         $tester = new CommandTester($command);
         $tester->execute([]);
         $result = $tester->getDisplay();
-        $this->assertRegExp('/Deleted 1 file/', $result);
+        $this->assertRegExp('/Cache cleared/', $result);
     }
 
     public function testWithFailures()
     {
         $app = $this->getApp();
-        $app['cache'] = $this->getCacheMock('bad');
+        $app['cache'] = $this->getCacheMock(null, false);
         $command = new CacheClear($app);
         $tester = new CommandTester($command);
 
         $tester->execute([]);
         $result = $tester->getDisplay();
-        $this->assertRegExp('/files could not be deleted/', $result);
-        $this->assertRegExp('/test.txt/', $result);
+        $this->assertRegExp('/Failed to clear cache/', $result);
     }
 
-    protected function getCacheMock($type = 'good')
+    protected function getCacheMock($path = null, $flushResult = true)
     {
-        $app = $this->getApp();
-        $path = $app['resources']->getPath('cache');
-        $good = ['successfiles' => 1, 'failedfiles' => 0];
-        $bad = ['successfiles' => 0, 'failedfiles' => 1, 'failed' => ['test.txt']];
-
-        $cache = $this->getMock('Bolt\Cache', ['clearCache'], [$path, $app]);
-        $cache->expects($this->any())
-            ->method('clearCache')
-            ->will($this->returnValue($$type));
+        $cache = parent::getCacheMock($path);
+        $cache->expects($this->once())
+            ->method('flushAll')
+            ->will($this->returnValue($flushResult))
+        ;
 
         return $cache;
     }

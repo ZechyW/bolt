@@ -2,9 +2,16 @@
 namespace Bolt\Controller\Backend;
 
 use Bolt\AccessControl\Permissions;
+use Bolt\Events\AccessControlEvent;
 use Bolt\Storage\Entity;
 use Bolt\Translation\Translator as Trans;
 use Silex\ControllerCollection;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\DateTimeType;
+use Symfony\Component\Form\Extension\Core\Type\FormType;
+use Symfony\Component\Form\Extension\Core\Type\HiddenType;
+use Symfony\Component\Form\Extension\Core\Type\PasswordType;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\Form;
 use Symfony\Component\Form\FormBuilder;
 use Symfony\Component\Form\FormError;
@@ -16,7 +23,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * Backend controller for user maintenance routes.
  *
- * Prior to v2.3 this functionality primarily existed in the monolithic
+ * Prior to v3.0 this functionality primarily existed in the monolithic
  * Bolt\Controllers\Backend class.
  *
  * @author Gawain Lynch <gawain.lynch@gmail.com>
@@ -54,7 +61,7 @@ class Users extends BackendBase
     {
         $currentuser = $this->getUser();
         $users = $this->users()->getUsers();
-        $sessions = $this->authentication()->getActiveSessions();
+        $sessions = $this->accessControl()->getActiveSessions();
 
         foreach ($users as $name => $user) {
             if (($key = array_search(Permissions::ROLE_EVERYONE, $user['roles'], true)) !== false) {
@@ -65,10 +72,10 @@ class Users extends BackendBase
         $context = [
             'currentuser' => $currentuser,
             'users'       => $users,
-            'sessions'    => $sessions
+            'sessions'    => $sessions,
         ];
 
-        return $this->render('users/users.twig', $context);
+        return $this->render('@bolt/users/users.twig', $context);
     }
 
     /**
@@ -102,7 +109,6 @@ class Users extends BackendBase
         // Check if the form was POST-ed, and valid. If so, store the user.
         if ($request->isMethod('POST')) {
             $userEntity = $this->validateUserForm($request, $form, false);
-
             if ($userEntity !== false && $userEntity->getId() == $currentUser->getId() && $userEntity->getUsername() !== $currentUser->getUsername()) {
                 // If the current user changed their own login name, the session
                 // is effectively invalidated. If so, we must redirect to the
@@ -133,7 +139,7 @@ class Users extends BackendBase
             'displayname' => $userEntity['displayname'],
         ];
 
-        return $this->render('edituser/edituser.twig', $context);
+        return $this->render('@bolt/edituser/edituser.twig', $context);
     }
 
     /**
@@ -146,7 +152,7 @@ class Users extends BackendBase
     public function first(Request $request)
     {
         // We should only be here for creating the first user
-        if ($this->app['schema']->checkUserTableIntegrity() && $this->users()->hasUsers()) {
+        if ($this->app['schema']->hasUserTable() && $this->users()->hasUsers()) {
             return $this->redirectToRoute('dashboard');
         }
 
@@ -162,7 +168,7 @@ class Users extends BackendBase
         }
 
         // If we get here, chances are we don't have the tables set up, yet.
-        $this->app['schema']->repairTables();
+        $this->app['schema']->update();
 
         // Grant 'root' to first user by default
         $userEntity->setRoles([Permissions::ROLE_ROOT]);
@@ -189,7 +195,7 @@ class Users extends BackendBase
             'sitename'    => $this->getOption('general/sitename'),
         ];
 
-        return $this->render('firstuser/firstuser.twig', $context);
+        return $this->render('@bolt/firstuser/firstuser.twig', $context);
     }
 
     /**
@@ -202,8 +208,8 @@ class Users extends BackendBase
      */
     public function modify($action, $id)
     {
-        if (!$this->checkAntiCSRFToken()) {
-            $this->flashes()->info(Trans::__('An error occurred.'));
+        if (!$this->isCsrfTokenValid()) {
+            $this->flashes()->error(Trans::__('general.phrase.something-went-wrong'));
 
             return $this->redirectToRoute('users');
         }
@@ -217,51 +223,49 @@ class Users extends BackendBase
         // Prevent the current user from enabling, disabling or deleting themselves
         $currentuser = $this->getUser();
         if ($currentuser->getId() == $user->getId()) {
-            $this->flashes()->error(Trans::__("You cannot '%s' yourself.", ['%s', $action]));
+            $this->flashes()->error(Trans::__('general.phrase.access-denied-self-action', ['%s', $action]));
 
             return $this->redirectToRoute('users');
         }
 
         // Verify the current user has access to edit this user
         if (!$this->app['permissions']->isAllowedToManipulate($user->toArray(), $currentuser->toArray())) {
-            $this->flashes()->error(Trans::__('You do not have the right privileges to edit that user.'));
+            $this->flashes()->error(Trans::__('general.phrase.access-denied-privilege-edit-user'));
 
             return $this->redirectToRoute('users');
         }
 
         switch ($action) {
-
             case 'disable':
                 if ($this->users()->setEnabled($id, false)) {
                     $this->app['logger.system']->info("Disabled user '{$user->getDisplayname()}'.", ['event' => 'security']);
 
-                    $this->flashes()->info(Trans::__("User '%s' is disabled.", ['%s' => $user->getDisplayname()]));
+                    $this->flashes()->info(Trans::__('general.phrase.user-disabled', ['%s' => $user->getDisplayname()]));
                 } else {
-                    $this->flashes()->info(Trans::__("User '%s' could not be disabled.", ['%s' => $user->getDisplayname()]));
+                    $this->flashes()->info(Trans::__('general.phrase.user-failed-disabled', ['%s' => $user->getDisplayname()]));
                 }
                 break;
 
             case 'enable':
-                if ($this->users()->setEnabled($id, 1)) {
+                if ($this->users()->setEnabled($id, true)) {
                     $this->app['logger.system']->info("Enabled user '{$user->getDisplayname()}'.", ['event' => 'security']);
-                    $this->flashes()->info(Trans::__("User '%s' is enabled.", ['%s' => $user->getDisplayname()]));
+                    $this->flashes()->info(Trans::__('general.phrase.user-enabled', ['%s' => $user->getDisplayname()]));
                 } else {
-                    $this->flashes()->info(Trans::__("User '%s' could not be enabled.", ['%s' => $user->getDisplayname()]));
+                    $this->flashes()->info(Trans::__('general.phrase.user-failed-enable', ['%s' => $user->getDisplayname()]));
                 }
                 break;
 
             case 'delete':
-
-                if ($this->checkAntiCSRFToken() && $this->users()->deleteUser($id)) {
+                if ($this->isCsrfTokenValid() && $this->users()->deleteUser($id)) {
                     $this->app['logger.system']->info("Deleted user '{$user->getDisplayname()}'.", ['event' => 'security']);
-                    $this->flashes()->info(Trans::__("User '%s' is deleted.", ['%s' => $user->getDisplayname()]));
+                    $this->flashes()->info(Trans::__('general.phrase.user-deleted', ['%s' => $user->getDisplayname()]));
                 } else {
-                    $this->flashes()->info(Trans::__("User '%s' could not be deleted.", ['%s' => $user->getDisplayname()]));
+                    $this->flashes()->info(Trans::__('general.phrase.user-failed-delete', ['%s' => $user->getDisplayname()]));
                 }
                 break;
 
             default:
-                $this->flashes()->error(Trans::__("No such action for user '%s'.", ['%s' => $user->getDisplayname()]));
+                $this->flashes()->error(Trans::__('general.phrase.no-such-action-for-user', ['%s' => $user->getDisplayname()]));
 
         }
 
@@ -296,7 +300,7 @@ class Users extends BackendBase
                 $this->app['logger.system']->info(Trans::__('page.edit-users.log.user-updated', ['%user%' => $user->getDisplayname()]), ['event' => 'security']);
 
                 $user = new Entity\Users($form->getData());
-                if ($this->getRepository()->save($user)) {
+                if ($this->getRepository('Bolt\Storage\Entity\Users')->save($user)) {
                     $this->flashes()->success(Trans::__('page.edit-users.message.user-saved', ['%user%' => $user->getDisplayname()]));
                 } else {
                     $this->flashes()->error(Trans::__('page.edit-users.message.saving-user', ['%user%' => $user->getDisplayname()]));
@@ -313,7 +317,7 @@ class Users extends BackendBase
             'displayname' => $user->getDisplayname(),
         ];
 
-        return $this->render('edituser/edituser.twig', $context);
+        return $this->render('@bolt/edituser/edituser.twig', $context);
     }
 
     /**
@@ -324,10 +328,10 @@ class Users extends BackendBase
     public function viewRoles()
     {
         $contenttypes = $this->getOption('contenttypes');
-        $permissions = ['view', 'edit', 'create', 'publish', 'depublish', 'change-ownership'];
+        $permissions = $this->app['permissions']->getContentTypePermissions();
         $effectivePermissions = [];
         foreach ($contenttypes as $contenttype) {
-            foreach ($permissions as $permission) {
+            foreach (array_keys($permissions) as $permission) {
                 $effectivePermissions[$contenttype['slug']][$permission] =
                 $this->app['permissions']->getRolesByContentTypePermission($permission, $contenttype['slug']);
             }
@@ -339,23 +343,14 @@ class Users extends BackendBase
             'global_permissions'    => $globalPermissions,
         ];
 
-        return $this->render('roles/roles.twig', $context);
-    }
-
-
-    /**
-     * @return \Bolt\Storage\Entity\Users
-     */
-    protected function getRepository()
-    {
-        return $this->app['storage']->getRepository('Bolt\Storage\Entity\Users');
+        return $this->render('@bolt/roles/roles.twig', $context);
     }
 
     /**
      * Handle a first user creation POST.
      *
      * @param Request $request
-     * @param Form $form
+     * @param Form    $form
      *
      * @return \Symfony\Component\HttpFoundation\RedirectResponse|false
      */
@@ -365,10 +360,12 @@ class Users extends BackendBase
             return false;
         }
 
-        $login = $this->login()->login($request, $userEntity->getUsername(), $form->get('password')->getData());
-        if ($login && $token = $this->session()->get('authentication')) {
+        $event = new AccessControlEvent($request);
+        $login = $this->login()->login($userEntity->getUsername(), $form->get('password')->getData(), $event);
+        $token = $this->session()->get('authentication');
+        if ($login && $token) {
             $this->flashes()->clear();
-            $this->flashes()->info(Trans::__('Welcome to your new Bolt site, %USER%.', ['%USER%' => $userEntity->getDisplayname()]));
+            $this->flashes()->success(Trans::__('general.bolt-welcome-new-site', ['%USER%' => $userEntity->getDisplayname()]));
 
             $response = $this->setAuthenticationCookie($this->redirectToRoute('dashboard'), (string) $token);
 
@@ -376,9 +373,9 @@ class Users extends BackendBase
         }
 
         if (!$token) {
-            $this->flashes()->error(Trans::__("Unable to retrieve login session data. Please check your system's PHP session settings."));
+            $this->flashes()->error(Trans::__('general.phrase.error-session-data-login'));
         } else {
-            $this->flashes()->error(Trans::__('Something went wrong with logging in after first user creation!'));
+            $this->flashes()->error(Trans::__('general.phrase.something-went-wrong-after-first-user'));
         }
 
         return false;
@@ -395,66 +392,70 @@ class Users extends BackendBase
     private function getUserForm(Entity\Users $user, $addusername = false)
     {
         // Start building the form
-        $form = $this->createFormBuilder('form', $user);
+        $form = $this->createFormBuilder(FormType::class, $user);
 
         // Username goes first
         if ($addusername) {
             $form->add(
                 'username',
-                'text',
+                TextType::class,
                 [
                     'constraints' => [new Assert\NotBlank(), new Assert\Length(['min' => 2, 'max' => 32])],
                     'label'       => Trans::__('page.edit-users.label.username'),
                     'attr'        => [
-                        'placeholder' => Trans::__('page.edit-users.placeholder.username')
-                    ]
+                        'placeholder' => Trans::__('page.edit-users.placeholder.username'),
+                    ],
                 ]
             );
         }
 
-        // Add the other fields
+        // Add the other fields. Regarding the autocomplete on the passwords,
+        // see: https://bugs.chromium.org/p/chromium/issues/detail?id=468153#c150
         $form
-            ->add('id', 'hidden')
+            ->add('id', HiddenType::class)
             ->add(
                 'password',
-                'password',
+                PasswordType::class,
                 [
                     'required' => false,
                     'label'    => Trans::__('page.edit-users.label.password'),
                     'attr'     => [
-                        'placeholder' => Trans::__('page.edit-users.placeholder.password')
-                    ]
+                        'placeholder'  => Trans::__('page.edit-users.placeholder.password'),
+                        'autocomplete' => 'new-password',
+                    ],
                 ]
             )
             ->add(
                 'password_confirmation',
-                'password',
+                PasswordType::class,
                 [
                     'required' => false,
                     'label'    => Trans::__('page.edit-users.label.password-confirm'),
                     'attr'     => [
-                        'placeholder' => Trans::__('page.edit-users.placeholder.password-confirm')
-                    ]
+                        'placeholder'  => Trans::__('page.edit-users.placeholder.password-confirm'),
+                        'autocomplete' => 'new-password',
+                    ],
                 ]
             )
             ->add(
                 'email',
-                'text',
+                TextType::class,
                 [
                     'constraints' => new Assert\Email(),
                     'label'       => Trans::__('page.edit-users.label.email'),
-                    'attr'        => ['placeholder' => Trans::__('page.edit-users.placeholder.email')]
+                    'attr'        => ['placeholder' => Trans::__('page.edit-users.placeholder.email')],
                 ]
             )
             ->add(
                 'displayname',
-                'text',
+                TextType::class,
                 [
                     'constraints' => [new Assert\NotBlank(), new Assert\Length(['min' => 2, 'max' => 32])],
                     'label'       => Trans::__('page.edit-users.label.display-name'),
-                    'attr'        => ['placeholder' => Trans::__('page.edit-users.placeholder.displayname')]
+                    'attr'        => ['placeholder' => Trans::__('page.edit-users.placeholder.displayname')],
                 ]
-            );
+            )
+        ;
 
         return $form;
     }
@@ -469,9 +470,9 @@ class Users extends BackendBase
     private function getEditableUser($id)
     {
         if (empty($id)) {
-            return new Entity\Users;
+            return new Entity\Users();
         } elseif (!$userEntity = $this->getUser($id)) {
-            $this->flashes()->error(Trans::__('That user does not exist.'));
+            $this->flashes()->error(Trans::__('general.phrase.user-not-exist'));
 
             return false;
         }
@@ -479,7 +480,7 @@ class Users extends BackendBase
         $currentUser = $this->getUser();
         if (!$this->app['permissions']->isAllowedToManipulate($userEntity->toArray(), $currentUser->toArray())) {
             // Verify the current user has access to edit this user
-            $this->flashes()->error(Trans::__('You do not have the right privileges to edit that user.'));
+            $this->flashes()->error(Trans::__('general.phrase.access-denied-privilege-edit-user'));
 
             return false;
         }
@@ -490,8 +491,8 @@ class Users extends BackendBase
     /**
      * Get the editable fields for the user form.
      *
-     * @param FormBuilder  $form
-     * @param integer      $id
+     * @param FormBuilder $form
+     * @param integer     $id
      *
      * @return \Symfony\Component\Form\FormBuilder
      */
@@ -499,7 +500,7 @@ class Users extends BackendBase
     {
         $enabledoptions = [
             1 => Trans::__('page.edit-users.activated.yes'),
-            0 => Trans::__('page.edit-users.activated.no')
+            0 => Trans::__('page.edit-users.activated.no'),
         ];
 
         $roles = array_map(
@@ -514,7 +515,7 @@ class Users extends BackendBase
         if ($currentUser->getId() != $id) {
             $form->add(
                 'enabled',
-                'choice',
+                ChoiceType::class,
                 [
                     'choices'     => $enabledoptions,
                     'expanded'    => false,
@@ -527,33 +528,32 @@ class Users extends BackendBase
         $form
             ->add(
                 'roles',
-                'choice',
+                ChoiceType::class,
                 [
                     'choices'  => $roles,
                     'expanded' => true,
                     'multiple' => true,
-                    'label'    => Trans::__('page.edit-users.label.assigned-roles')
+                    'label'    => Trans::__('page.edit-users.label.assigned-roles'),
                 ]
             )
             ->add(
                 'lastseen',
-                'datetime',
+                DateTimeType::class,
                 [
                     'widget'   => 'single_text',
                     'format'   => 'yyyy-MM-dd HH:mm:ss',
                     'disabled' => true,
-                    'label'    => Trans::__('page.edit-users.label.last-seen')
+                    'label'    => Trans::__('page.edit-users.label.last-seen'),
                 ]
             )
             ->add(
                 'lastip',
-                'text',
+                TextType::class,
                 [
                     'disabled' => true,
-                    'label'    => Trans::__('page.edit-users.label.last-ip')
+                    'label'    => Trans::__('page.edit-users.label.last-ip'),
                 ]
-            )
-        ;
+            );
 
         return $form;
     }
@@ -634,11 +634,11 @@ class Users extends BackendBase
      *
      * @param Request $request
      * @param Form    $form      A Symfony form
-     * @param boolean $firstuser If this is a first user set up
+     * @param boolean $firstUser If this is a first user set up
      *
-     * @return Entity\Users|false User entity, or false
+     * @return Entity\Users|false
      */
-    private function validateUserForm(Request $request, Form $form, $firstuser = false)
+    private function validateUserForm(Request $request, Form $form, $firstUser = false)
     {
         $form->submit($request->get($form->getName()));
         if (!$form->isValid()) {
@@ -648,13 +648,16 @@ class Users extends BackendBase
         $userEntity = new Entity\Users($form->getData());
         $userEntity->setUsername($this->app['slugify']->slugify($userEntity->getUsername()));
 
-        if (!$firstuser) {
+        if ($firstUser) {
+            $userEntity->setEnabled(true);
+        } else {
             $userEntity->setRoles($this->users()->filterManipulatableRoles($userEntity->getId(), $userEntity->getRoles()));
         }
 
-        if ($this->getRepository()->save($userEntity)) {
+        $saved = $this->getRepository('Bolt\Storage\Entity\Users')->save($userEntity);
+        if ($saved) {
             $this->flashes()->success(Trans::__('page.edit-users.message.user-saved', ['%user%' => $userEntity->getDisplayname()]));
-            $this->notifyUserSave($userEntity->getDisplayname(), $userEntity->getEmail(), $firstuser);
+            $this->notifyUserSave($request, $userEntity->getDisplayname(), $userEntity->getEmail(), $firstUser);
         } else {
             $this->flashes()->error(Trans::__('page.edit-users.message.saving-user', ['%user%' => $userEntity->getDisplayname()]));
         }
@@ -665,48 +668,56 @@ class Users extends BackendBase
     /**
      * Notify of save event.
      *
+     * @param Request $request
      * @param string  $displayName
      * @param string  $email
      * @param boolean $firstuser
      */
-    private function notifyUserSave($displayName, $email, $firstuser)
+    private function notifyUserSave(Request $request, $displayName, $email, $firstuser)
     {
         if (!$firstuser) {
-            $this->app['logger.system']->info(Trans::__('page.edit-users.log.user-updated', ['%user%' => $displayName]),
-                ['event' => 'security']);
+            $this->app['logger.system']->info(
+                Trans::__('page.edit-users.log.user-updated', ['%user%' => $displayName]),
+                ['event' => 'security']
+            );
         } else {
-            $this->app['logger.system']->info(Trans::__('page.edit-users.log.user-added', ['%user%' => $displayName]),
-                ['event' => 'security']);
-            $this->notifyUserSetupEmail($displayName, $email);
+            $this->app['logger.system']->info(
+                Trans::__('page.edit-users.log.user-added', ['%user%' => $displayName]),
+                ['event' => 'security']
+            );
+            $this->notifyUserSetupEmail($request, $displayName, $email);
         }
     }
 
     /**
      * Send a welcome email to test mail settings.
      *
-     * @param string $displayName
-     * @param string $email
+     * @param Request $request
+     * @param string  $displayName
+     * @param string  $email
      */
-    private function notifyUserSetupEmail($displayName, $email)
+    private function notifyUserSetupEmail(Request $request, $displayName, $email)
     {
         // Create a welcome email
         $mailhtml = $this->render(
-            'email/firstuser.twig',
+            '@bolt/email/firstuser.twig',
             ['sitename' => $this->getOption('general/sitename')]
         )->getContent();
 
         try {
             // Send a welcome email
             $name = $this->getOption('general/mailoptions/senderName', $this->getOption('general/sitename'));
+            $from = ['bolt@' . $request->getHost() => $name];
             $email = $this->getOption('general/mailoptions/senderMail', $email);
             $message = $this->app['mailer']
                 ->createMessage('message')
-                ->setSubject(Trans::__('New Bolt site has been set up'))
-                ->setFrom([$email => $name])
+                ->setSubject(Trans::__('general.bolt-new-site-set-up'))
+                ->setFrom($from)
+                ->setReplyTo($from)
                 ->setTo([$email   => $displayName])
                 ->setBody(strip_tags($mailhtml))
-                ->addPart($mailhtml, 'text/html')
-            ;
+                ->addPart($mailhtml, 'text/html');
+
             $failedRecipients = [];
 
             $this->app['mailer']->send($message, $failedRecipients);

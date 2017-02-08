@@ -1,8 +1,8 @@
 <?php
 namespace Bolt\Configuration;
 
-use Bolt\Exception\FilesystemException;
-use League\Flysystem\File;
+use Bolt\Filesystem\Exception\IOException;
+use Bolt\Filesystem\Handler\File;
 use Silex;
 use Symfony\Component\Yaml\Parser;
 use Symfony\Component\Yaml\Yaml;
@@ -16,8 +16,6 @@ class YamlUpdater
 {
     /** @var Parser */
     private $parser;
-    /** @var integer Number of lines in the file. */
-    private $lines = 0;
     /** @var array Contains a line of the file per index. */
     private $yaml = [];
     /** @var File */
@@ -33,7 +31,6 @@ class YamlUpdater
      */
     public function __construct(Silex\Application $app, $filename = '')
     {
-        $this->changed = false;
         $this->file = $app['filesystem']->get('config://' . $filename, new File());
         $this->parser = new Parser();
 
@@ -45,9 +42,6 @@ class YamlUpdater
 
         // Create a searchable array
         $this->yaml = explode("\n", $yaml);
-
-        // Track the number of lines we have
-        $this->lines = count($this->yaml);
     }
 
     /**
@@ -61,7 +55,7 @@ class YamlUpdater
     {
         $yaml = $this->parsed;
 
-        $keyparts = explode("/", $key);
+        $keyparts = explode('/', $key);
         while ($key = array_shift($keyparts)) {
             $yaml = &$yaml[$key];
         }
@@ -78,13 +72,14 @@ class YamlUpdater
      *
      * @param string $key
      * @param string $value
+     * @param bool   $makeBackup
      *
-     * @return boolean
+     * @return bool
      */
-    public function change($key, $value, $makebackup = true)
+    public function change($key, $value, $makeBackup = true)
     {
-        $pattern = str_replace("/", ":.*", $key);
-        preg_match_all('/^'.$pattern.'(:\s*)/mis', $this->file->read(), $matches,  PREG_OFFSET_CAPTURE);
+        $pattern = str_replace('/', ':.*?', $key);
+        preg_match_all('/^' . $pattern . '(:\s*)/mis', $this->file->read(), $matches,  PREG_OFFSET_CAPTURE);
 
         if (count($matches[0]) > 0 && count($matches[1])) {
             $index = $matches[1][0][1] + strlen($matches[1][0][0]);
@@ -93,9 +88,9 @@ class YamlUpdater
         }
 
         $line = substr_count($this->file->read(), "\n", 0, $index);
-        $this->yaml[$line] = preg_replace('/^(.*):(.*)/', "$1: ".$this->prepareValue($value), $this->yaml[$line]);
+        $this->yaml[$line] = preg_replace('/^(.*?):(.*)/', '$1: ' . $this->prepareValue($value), $this->yaml[$line]);
 
-        return $this->save($makebackup);
+        return $this->save($makeBackup);
     }
 
     /**
@@ -111,7 +106,7 @@ class YamlUpdater
     public function prepareValue($value)
     {
         if (is_array($value)) {
-            return "[ " . implode(", ", $value) . " ]";
+            return '[ ' . implode(', ', $value) . ' ]';
         }
 
         if (preg_match('/[^a-z0-9]/i', $value)) {
@@ -126,7 +121,7 @@ class YamlUpdater
      *
      * @param boolean $makebackup Back up the file before commiting changes to it
      *
-     * @throws \Bolt\Exception\FilesystemException
+     * @throws IOException
      *
      * @return boolean true if save was successful
      */
@@ -142,9 +137,7 @@ class YamlUpdater
         }
 
         // Update the YAML file if we can, or throw an error
-        if (! $this->file->update($this->yaml)) {
-            throw new FilesystemException('Unable to write to file: ' . $this->file->getPath(), FilesystemException::FILE_NOT_WRITEABLE);
-        }
+        $this->file->update($this->yaml);
 
         return true;
     }

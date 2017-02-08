@@ -35,8 +35,12 @@ class RedirectListener implements EventSubscriberInterface
      * @param \Bolt\Users                                                $users
      * @param \Bolt\AccessControl\AccessChecker                          $authentication
      */
-    public function __construct(Session $session, UrlGeneratorInterface $urlGenerator, Users $users, AccessChecker $authentication)
-    {
+    public function __construct(
+        Session $session,
+        UrlGeneratorInterface $urlGenerator,
+        Users $users,
+        AccessChecker $authentication
+    ) {
         $this->session = $session;
         $this->urlGenerator = $urlGenerator;
         $this->users = $users;
@@ -73,7 +77,7 @@ class RedirectListener implements EventSubscriberInterface
     protected function handleNoBackendAccess(RedirectResponse $response)
     {
         $authCookie = $this->session->get('authentication');
-        if (!$this->authentication->isValidSession((string) $authCookie)) {
+        if ($authCookie === null || !$this->authentication->isValidSession($authCookie)) {
             return;
         }
 
@@ -97,10 +101,13 @@ class RedirectListener implements EventSubscriberInterface
         $route = $request->attributes->get('_route');
 
         if ($response->getTargetUrl() === $this->urlGenerator->generate('login') && $route !== 'logout') {
-            $this->session->set('retreat', [
-                'route'  => $route,
-                'params' => $request->attributes->get('_route_params'),
-            ]);
+            $this->session->set(
+                'retreat',
+                [
+                    'route'  => $route,
+                    'params' => $request->attributes->get('_route_params'),
+                ]
+            );
         } else {
             $this->session->remove('retreat');
         }

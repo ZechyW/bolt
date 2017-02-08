@@ -1,12 +1,11 @@
-/* global module */
-
 /*
  * POSTCSS: Transforming CSS with JS plugins
  */
 module.exports = function (grunt, options) {
-    var path = require('path'),
-        proc = {
-            autoprefixer: require('autoprefixer-core'),
+    'use strict';
+
+    var proc = {
+            autoprefixer: require('autoprefixer'),
             cssMqPacker: require('css-mqpacker'),
             csswring: require('csswring'),
             singleCharset: require('postcss-single-charset')
@@ -64,5 +63,5 @@ module.exports = function (grunt, options) {
                 '<%= path.dest.css %>/lib.css'
             ]
         }
-	};
+    };
 };

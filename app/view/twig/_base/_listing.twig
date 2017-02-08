@@ -1,88 +1,170 @@
-{% import '_macro/_macro.twig' as macro %}
+{% import '@bolt/_macro/_macro.twig' as macro %}
+{% from '@bolt/_buic/_moment.twig' import buic_moment %}
+{% from _self import tbody_beg, tbody_end %}
 
-{# If we have 'grouping', print the row with the groupname. #}
-{% if not compact and content.group.name is defined and (loop.first or content.group.name != lastgroup) and request('order') == '' %}
-    {% if not loop.first %}</tbody>{% endif %}
-    <tbody {% if isallowed('edit', contenttype) %}class="sortable"{% endif %}>
-    <tr class="grouping">
-        <th colspan="{% block listing_columns %}6{% endblock %}">
-            <h3 {% if loop.first %}class="first"{% endif %}>
-                {% if content.group.name %}
-                    {{ content.group.name }}
-                {% else %}
-                    {{ __('(no group)') }}
-                {% endif %}
-            </h3>
-        </th>
+{% macro tbody_beg(local, modifiable) %}
+    {% set class = [
+    modifiable ? 'sortable' : '',
+    local.row_heading and local.row_header ? 'striping_even' : 'striping_odd',
+    ] %}
+
+<tbody{{ hclass(class)}} data-bolt-widget="buicListingPart">
+{% endmacro %}
+
+{% macro tbody_end(toolbar) %}
+{% if toolbar %}
+    <tr class="selectiontoolbar hidden">
+        <td colspan="{{ block('listing_columns') }}">
+            <i class="fa fa-fw fa-rotate-270 fa-mail-forward"></i><div class="count">0</div>
+            {{ toolbar }}
+        </td>
     </tr>
 {% endif %}
+</tbody>
+{% endmacro %}
 
-{# print the header for the first row. #}
-{% if not compact and (loop.first or (content.group.name is defined and content.group.name != lastgroup) and request('order') == '') %}
-    {% set lastgroup = content.group.name|default %}
-    {% if "filter" in app.request.query.all|keys %}
-        {% set filter = "filter=" ~ app.request.query.all.filter ~ "&" %}
-    {% else %}
-        {% set filter = "" %}
+{% set modifiable = permissions.create or permissions.edit or permissions.delete or permissions.publish or permissions.depublish %}
+
+{% set prop = {
+extended:       not compact,
+has_groupname:  content.group.name is defined,
+nextgroup:      new_group|default(false),
+unordered:      request('order') == '',
+first:          loop.first,
+last:           loop.last
+}%}
+
+{% set local = {
+row_heading:    prop.extended and prop.unordered and prop.has_groupname and (prop.first or prop.nextgroup),
+row_header:     prop.extended and (prop.first or (prop.has_groupname and prop.nextgroup) and prop.unordered)
+} %}
+
+{#
+ # GROUPNAME: If we have 'grouping', print the row with the groupname.
+ #}
+{% if local.row_heading or internal.heading|default() %}
+    {% if not prop.first %}
+        {{ tbody_end(internal.selection_toolbar|default()) }}
     {% endif %}
 
-    {% set link = "?" ~ filter ~ "order=" %}
-    <tr>
-        {% block listing_header %}
-        {% if not compact and editable %}
-            <th class="check hidden-xs"><input type="checkbox" name="checkRow" title="{{ __('Select all') }}" /></th>
-        {% else %}
-            <th style="margin: 0; padding: 0;"></th>
+    {{ tbody_beg(local, modifiable) }}
+
+    <tr class="heading">
+        {% if false %}
+            {% block listing_columns %}6{% endblock %}
         {% endif %}
-
-        <th class="hidden-xs"><a href="{{ link }}{% if request('order') == 'id' %}-{% endif %}id">
-            {{ __('Id') }}
-        </a></th>
-
-        <th style="width:80%">
-            <a href="{{ link }}{% if request('order') == content.TitleColumnName()|first %}-{% endif %}{{ content.TitleColumnName()|first }}">
-                {{ __('Title') }} / {{ __('Excerpt') }}
-            </a>
+        {% if compact %}
+            {% set columns = block('listing_columns') - 1 %}
+        {% else %}
+            {% set columns = block('listing_columns') %}
+        {% endif %}
+        <th colspan="{{ columns }}">
+            {% if internal.heading|default() %}
+                {{ internal.heading }}
+            {% else %}
+                {{ content.group.name|default(__('(no group)')) }}
+            {% endif %}
         </th>
+    </tr>
+{% elseif prop.first %}
+    {{ tbody_beg(local, modifiable) }}
+{% endif %}
 
+{#
+ # HEADER ROW: Print the header for the first row.
+ #}
+{% if local.row_header %}
+    {# Deprecated #}
+    {% set params = {} %}
+    {% for key, val in app.request.query.all if key != 'order' %}
+        {% set params = params|merge({(key): val}) %}
+    {% endfor %}
+    {% set link = '?' ~ params|url_encode ~ (params|length ? '&' : '') ~ 'order=' %}
+    {# /Deprecated #}
 
-        <th>&nbsp;</th>
+    <tr class="header">
+        {% block listing_header %}
+            {% from '@bolt/_buic/_listing.twig' import buic_listing_slink %}
 
-        <th class="username hidden-xs"><a href="{{ link }}{% if request('order') == "datecreated" %}-{% endif %}datecreated">{{ __('Meta') }}</a></th>
+            {# COLUMN: Select #}
+            {% if prop.extended and modifiable %}
+                <th class="menu hidden-xs">
+                    <div class="btn-group">
+                        <button class="btn btn-default btn-xs dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                            <span class="caret"></span>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li class="select-all"><a href="#">{{ __('general.phrase.select-all') }}</a></li>
+                            <li class="hidden select-none"><a href="#">{{ __('general.phrase.select-none') }}</a></li>
+                            <li class="hidden divider" role="separator"></li>
+                            <li class="hidden dropdown-header">{{ __('general.phrase.selection') }} (#):</li>
+                            <li class="hidden"><a href="#">• {{ __('general.phrase.delete') }}</a></li>
+                            <li class="hidden disabled"><a href="#">• {{ __('general.phrase.publish') }}</a></li>
+                            <li class="hidden disabled"><a href="#">• {{ __('general.phrase.depublish') }}</a></li>
+                        </ul>
+                    </div>
+                </th>
+            {% else %}
+                <th style="margin: 0; padding: 0;"></th>
+            {% endif %}
 
-        <th><a href="?">{{ __('Actions') }}</a></th>
+            {# COLUMN: ID #}
+            <th class="hidden-xs">{{ buic_listing_slink('id', __('general.phrase.id'))}}</th>
+
+            {# COLUMN: Content #}
+            <th style="width:80%">{{ buic_listing_slink(content.TitleColumnName()|first, __('Title') ~ ' / ' ~ __('Excerpt')) }}</th>
+
+            {# COLUMN: Thumbnail #}
+            <th class="listthumb"></th>
+
+            {# COLUMN: Meta #}
+            <th class="username hidden-sm hidden-xs">{{ buic_listing_slink('datecreated', __('general.phrase.meta'))}}</th>
+
+            {# COLUMN: Action #}
+            <th><span class="hidden-xs">{{ __('general.phrase.action-plural') }}</span></th>
         {% endblock %}
     </tr>
 {% endif %}
 
-<tr {% if content.status!='published' %}class="dim"{% endif %}{% if not compact and editable %} id="item_{{ content.id }}"{% endif %}>
-    {% block listing_id %}
+{#
+ # DATA ROW
+ #}
+<tr {% if content.status!='published' %}class="dim"{% endif %}{% if modifiable %} id="item_{{ content.id }}"{% endif %}>
 
-        {% if not compact and editable and isallowed('delete', contenttype) %}
+    {### BLOCK: ID ###}
+    {% block listing_id %}
+        {# COLUMN: Select #}
+        {% if prop.extended and permissions.delete %}
             <td class="check hidden-xs"><input type="checkbox" name="checkRow"></td>
         {% else %}
             <td style="margin: 0; padding: 0;"></td>
         {% endif %}
-        <td class="id hidden-xs">№ {{ content.id }}</td>
 
+        {# COLUMN: ID #}
+        <td class="id hidden-xs">№ {{ content.id }}</td>
     {% endblock %}
 
+    {### BLOCK: CONTENT ###}
     {% block listing_content %}
-        <td class="excerpt {% if not compact %}large{% endif %}"><span>
-            <strong class="visible-xs">№ {{ content.id }}. </strong>
-            <strong>
-                {% if editable %}
-                    <a href="{{ path('editcontent', {'contenttypeslug': content.contenttype.slug, 'id': content.id}) }}" title="Slug: {{ content.slug }}">
-                        {{ content.getTitle|default("<em>(" ~ __("no title …") ~ ")</em>")|raw }}
-                    </a>
-                {% else %}
-                     <strong>
-                        {{ content.getTitle|default("<em>(" ~ __("no title …") ~ ")</em>")|raw }}
-                    </strong>
-                 {% endif %}
-            </strong>
-            {{ content.excerpt(excerptlength) }}
-                        </span></td>
+        {# COLUMN: Content #}
+        <td class="excerpt {% if prop.extended %}large{% endif %}">
+            {% set title = content.getTitle(true)|default("<em>(" ~ __('general.phrase.no-title') ~ ")</em>") %}
+            <span>
+                <strong class="visible-xs">№ {{ content.id }}. </strong>
+                <strong>
+                    {% if modifiable %}
+                        <a href="{{ path('editcontent', {'contenttypeslug': content.contenttype.slug, 'id': content.id}) }}" title="Slug: {{ content.slug }}">
+                            {{ title|raw -}}
+                        </a>
+                    {% else %}
+                        {{ title|raw }}
+                    {% endif %}
+                </strong>
+                {{ content.excerpt(excerptlength - title|length, false, filter|default()) }}
+            </span>
+        </td>
+
+        {# COLUMN: Thumbnail #}
         <td class="listthumb">
             {% if content.getImage is not empty %}
                 {# Hack to add alt attribute #}
@@ -92,121 +174,151 @@
                 {% set thumb_large = content.getImage|thumbnail(1000, 800, 'r') %}
                 {% set thumb_title = __('Image') ~ ': ' ~ content.getImage %}
                 <a href="{{ thumb_large }}" class="magnific" title="{{ thumb_title }}">
-                    <img src="{{ thumb_small }}" width="{{ thumbsize }}" height="{{ thumb_height }}" alt="{{ __('Thumbnail') }}">
+                    <img src="{{ thumb_small }}" width="{{ thumbsize }}" height="{{ thumb_height }}" alt="{{ __('general.phrase.thumbnail') }}">
                 </a>
             {% endif %}
         </td>
     {% endblock %}
 
-    {% if not compact %}
+    {% if prop.extended %}
         {% block listing_meta %}
-            <td class="username hidden-xs">
+            {# COLUMN: Meta #}
+            <td class="username hidden-sm hidden-xs">
                 <i class="fa fa-user fa-fw"></i>
                 {% if content.user.displayname is defined %}
-                    {{ content.user.displayname|trimtext(15) }}
-                {% else %}
-                    <s>{{ content.values.ownerid|trimtext(15) }}</s>
+                {{ content.user.displayname|excerpt(15) }}
+            {% else %}
+                <s>{{ content.values.ownerid|excerpt(15) }}</s>
                 {% endif %}<br>
-                {% if content.status=="timed" %}
-                    <i class="fa fa-clock-o status-timed fa-fw"></i> <time class="moment" datetime="{{ content.datepublish|date("c") }}" title="{{ content.datepublish }}">{{ content.datepublish }}</time><br>
+                {% if content.status == 'timed' %}
+                    <i class="fa fa-clock-o status-timed fa-fw"></i> {{ buic_moment(content.datepublish) }}<br>
                 {% else %}
-                    <i class="fa fa-circle status-{{ content.status }} fa-fw"></i> {{ content.datepublish|localdate('%x') }}<br>
+                    <i class="fa fa-circle status-{{ content.status }} fa-fw"></i> {{ content.datepublish|localedatetime('%x') }}<br>
                 {% endif %}
-
-                {% if content.sortorder is defined and content.sortorder is not sameas(false) %}
-                    <span class="sorthandle"><i class="fa fa-sort fa-fw"></i> {{ __('Order: %sort%',{'%sort%': content.sortorder}) }}</span> <br>
+                {% if content.sortorder|default() is not empty %}
+                    <i class="fa fa-align-left fa-fw"></i>
+                    <a href="{{ path('editcontent', {'contenttypeslug': content.contenttype.slug, 'id': content.id}) }}#taxonomy" >
+                        {{ __('general.phrase.order-colon-sort',{'%sort%': content.sortorder}) }}
+                    </a>
                 {% endif %}
             </td>
         {% endblock %}
     {% endif %}
 
+    {### BLOCK: ACTIONS ###}
     {% block listing_actions %}
+        {# COLUMN: Action #}
         <td class="actions">
             <div class="btn-group">
-                {% if editable %}
-                <a class="btn btn-default btn-xs" href="{{ path('editcontent', {'contenttypeslug': content.contenttype.slug, 'id': content.id}) }}">
-                    <i class="fa fa-edit"></i> {{ __('Edit') }}
-                </a>
+                {% if modifiable %}
+                    <a class="btn btn-default btn-xs hidden-xs" href="{{ path('editcontent', {'contenttypeslug': content.contenttype.slug, 'id': content.id}) }}">
+                        <i class="fa fa-edit"></i> {{ __('general.phrase.edit') }}
+                    </a>
                 {% endif %}
                 <button type="button" class="btn btn-default dropdown-toggle btn-xs" data-toggle="dropdown">
-
-                    <i class="fa fa-info-sign"></i>
-                    <span class="caret"></span>
+                    <i class="fa fa-info-sign"></i> <span class="caret"></span>
                 </button>
+
                 <ul class="dropdown-menu pull-right">
-                {% if content.status == "published" and content.link is defined %}
-                    <li>
-                        <a href="{{ content.link }}" target="_blank">
-                            <i class="fa fa-external-link-square"></i> {{ __('View on site') }}
-                        </a>
-                    </li>
-                {% endif %}
-                {% if content.relation %}{# i.e. we're viewing this as "related content" on the "edit record" page. #}
-                    <li>
-                        <a href="{{ path('relatedto', {'contenttypeslug': content.contenttype.slug, 'id': content.id}) }}">
-                            <i class="fa fa-link"></i> {{ __('View related content') }}
-                        </a>
-                    </li>
-                {% endif %}
-
-
-                {% from _self import actionform %}
-                {% if editable %}
-                    {% if content.status != 'published' %}
-                        {% if isallowed('publish', content) %}
-
-                        <li>{{ macro.actionform(content, 'publish', 'fa-circle status-published', __('contenttypes.generic.publish',{'%contenttype%':content.contenttype.slug})) }}</li>
-                        {% endif %}
-                    {% else %}
-                        {% if isallowed('depublish', content) %}
-                        <li>{{ macro.actionform(content, 'held', 'fa-circle status-held', __("Change status to 'held'")) }}</li>
-                        <li>{{ macro.actionform(content, 'draft', 'fa-circle status-draft', __("Change status to 'draft'")) }}</li>
-
-                        {% endif %}
+                    {% if content.status == "published" and content.link is not empty %}
+                        <li>
+                            <a href="{{ content.link }}" target="_blank">
+                                <i class="fa fa-external-link-square"></i> {{ __('general.phrase.view-on-site') }}
+                            </a>
+                        </li>
                     {% endif %}
-                    {% if isallowed('create', content) %}
-                    <li><a href="{{ path('editcontent', {'contenttypeslug': content.contenttype.slug, 'id': content.id, 'duplicate': 1}) }}">
-                        <i class="fa fa-copy"></i> {{ __('contenttypes.generic.duplicate', {'%contenttype%': content.contenttype.slug}) }}</a></li>
+                    {% if content.relation %}{# i.e. we're viewing this as "related content" on the "edit record" page. #}
+                        <li>
+                            <a href="{{ path('relatedto', {'contenttypeslug': content.contenttype.slug, 'id': content.id}) }}">
+                                <i class="fa fa-link"></i> {{ __('general.phrase.view-related') }}
+                            </a>
+                        </li>
                     {% endif %}
-                    {% if isallowed('delete', content) %}
-                    <li>{{ macro.actionform(content, 'delete',
-                                          'fa-trash',
-                                          __('contenttypes.generic.delete', {'%contenttype%': content.contenttype.slug}),
-                                          "Are you sure you want to delete '" ~ content.getTitle ~ "'?" ) }}
-                    </li>
 
-                    {% endif %}
-                    <li class="divider"></li>
-                {% endif %}
-                    <li><a class="nolink">{{ __('Author:') }} <strong><i class="fa fa-user"></i>
-                        {% if content.user.displayname is defined %}
-                            {{ content.user.displayname|trimtext(15) }}
+                    {% from _self import actionform %}
+                    {% if modifiable %}
+                        {% if content.status != 'published' %}
+                            {% if permissions.publish %}
+                                <li>{{ macro.actionform(content, 'publish', 'fa-circle status-published', __('contenttypes.generic.publish',{'%contenttype%':content.contenttype.slug})) }}</li>
+                            {% endif %}
                         {% else %}
-                            <s>user {{ content.values.ownerid }} </s>
-                        {% endif %}</strong></a></li>
-                    <li><a class="nolink">{{ __('Current status:') }}
-                        <strong>{{ content.status }}</strong></a></li>
-                    <li><a class="nolink">{{ __('Slug:') }}
-                        <code title="{{ content.slug }}">{{ content.slug|trimtext(24) }}</code></a></li>
-                    <li><a class="nolink">{{ __('Created on:') }}
-                        <i class="fa fa-asterisk"></i> {{ content.datecreated|date("Y-m-d H:i") }}</a></li>
-                    <li><a class="nolink">{{ __('Published on:') }}
-                        <i class="fa fa-calendar"></i> {{ content.datepublish|date("Y-m-d H:i") }}</a></li>
-                    <li><a class="nolink">{{ __('Last edited on:') }}
-                        <i class="fa fa-refresh"></i> {{ content.datechanged|date("Y-m-d H:i") }}</a></li>
+                            {% if permissions.depublish %}
+                                <li>{{ macro.actionform(content, 'held', 'fa-circle status-held', __('general.phrase.status-change-held')) }}</li>
+                                <li>{{ macro.actionform(content, 'draft', 'fa-circle status-draft', __('general.phrase.status-change-draft')) }}</li>
+
+                            {% endif %}
+                        {% endif %}
+                        {% if permissions.create %}
+                            <li>
+                                <a href="{{ path('editcontent', {'contenttypeslug': content.contenttype.slug, 'id': content.id, 'duplicate': 1}) }}">
+                                    <i class="fa fa-copy"></i> {{ __('contenttypes.generic.duplicate', {'%contenttype%': content.contenttype.slug}) }}
+                                </a>
+                            </li>
+                        {% endif %}
+                        {% if permissions.delete %}
+                            <li>
+                                {{ macro.actionform(content, 'delete',
+                                'fa-trash',
+                                __('contenttypes.generic.delete', {'%contenttype%': content.contenttype.slug}),
+                                "Are you sure you want to delete '" ~ content.getTitle ~ "'?" ) }}
+                            </li>
+                        {% endif %}
+                        <li class="divider"></li>
+                    {% endif %}
+                    <li>
+                        <a class="nolink">
+                            {{ __('general.phrase.author-colon') }} <strong><i class="fa fa-user"></i>
+                                {% if content.user.displayname is defined %}
+                                    {{ content.user.displayname|excerpt(15) }}
+                                {% else %}
+                                    <s>user {{ content.values.ownerid }}</s>
+                                {% endif %}</strong>
+                        </a>
+                    </li>
+                    <li>
+                        <a class="nolink">{{ __('general.phrase.status-current-colon') }}<strong>{{ content.status }}</strong></a>
+                    </li>
+                    <li>
+                        <a class="nolink">{{ __('general.phrase.slug-colon') }}
+                            <code title="{{ content.slug }}">{{ content.slug|excerpt(24) }}</code>
+                        </a>
+                    </li>
+                    <li>
+                        <a class="nolink">{{ __('general.phrase.created-on-colon') }}
+                            <i class="fa fa-asterisk"></i> {{ content.datecreated|date("Y-m-d H:i") }}
+                        </a>
+                    </li>
+                    <li>
+                        <a class="nolink">{{ __('general.phrase.published-on-colon') }}
+                            <i class="fa fa-calendar"></i> {{ content.datepublish|date("Y-m-d H:i") }}
+                        </a>
+                    </li>
+                    <li>
+                        <a class="nolink">{{ __('general.phrase.last-edited-on-colon') }}
+                            <i class="fa fa-refresh"></i> {{ content.datechanged|date("Y-m-d H:i") }}
+                        </a>
+                    </li>
                     {% for taxonomyslug, values in content.taxonomy %}
                         {% if values|length > 1 %}
-                            <li><a class="nolink">{{ config.get('taxonomy')[taxonomyslug].name }}:
-                                <i class="fa fa-tag"></i> {{ values|join(", ")|trimtext(24) }}</a></li>
+                            <li>
+                                <a class="nolink">{{ config.get('taxonomy')[taxonomyslug].name }}:
+                                    <i class="fa fa-tag"></i> {{ values|join(", ")|excerpt(24) }}
+                                </a>
+                            </li>
                         {% else %}
-                            <li><a class="nolink">{{ config.get('taxonomy')[taxonomyslug].singular_name }}:
-                                <i class="fa fa-tag"></i> {{ values|first|trimtext(24) }}</a></li>
+                            <li>
+                                <a class="nolink">{{ config.get('taxonomy')[taxonomyslug].singular_name }}:
+                                    <i class="fa fa-tag"></i> {{ values|first|excerpt(24) }}
+                                </a>
+                            </li>
                         {% endif %}
                     {% endfor %}
                 </ul>
             </div>
-
         </td>
     {% endblock %}
-
 </tr>
+
+{% if prop.last %}
+    {{ tbody_end(internal.selection_toolbar|default()) }}
+{% endif %}

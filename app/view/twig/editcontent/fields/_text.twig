@@ -29,7 +29,7 @@
         required:        option.required,
         title:           option.title,
         type:            (option.pattern in ['url', 'email']) ? option.pattern : 'text',
-        value:           context.content.get(contentkey),
+        value:           context.content.get(contentkey)|default(''),
     }
 } %}
 
@@ -37,13 +37,14 @@
 
 {#=== FIELDSET =======================================================================================================#}
 
-{% extends '_base/_fieldset.twig' %}
+{% extends '@bolt/_base/_fieldset.twig' %}
 
 {% block fieldset_type 'text' %}
+{% block fieldset_widget 'fieldText' %}
 
 {% block fieldset_label_text  labelkey %}
 {% block fieldset_label_info  option.info %}
-{% block fieldset_label_class class[0] %}
+{% block fieldset_label_class 'control-label ' ~ class[0] %}
 {% block fieldset_label_for   key %}
 
 {% block fieldset_controls %}

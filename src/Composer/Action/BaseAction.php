@@ -2,10 +2,14 @@
 
 namespace Bolt\Composer\Action;
 
+use Bolt\Exception\PackageManagerException;
 use Composer\DependencyResolver\Pool;
 use Composer\Factory;
-use Composer\IO\BufferIO;
+use Composer\Package\PackageInterface;
+use Composer\Package\Version\VersionParser;
 use Composer\Package\Version\VersionSelector;
+use Composer\Repository\ComposerRepository;
+use Composer\Repository\ConfigurableRepositoryInterface;
 use Silex\Application;
 
 abstract class BaseAction
@@ -47,38 +51,44 @@ abstract class BaseAction
     /**
      * Get a single option.
      *
-     * @param string $key
-     *
-     * @return string|boolean|null
+     * @return Options
      */
-    protected function getOption($key)
+    protected function getOptions()
     {
-        return $this->app['extend.action.options'][$key];
+        return $this->app['extend.action.options'];
     }
 
     /**
      * Get a Composer object.
+     *
+     * @throws \Exception
      *
      * @return \Composer\Composer
      */
     protected function getComposer()
     {
         if (!$this->composer) {
+            // Set composer environment variables
+            putenv('COMPOSER_HOME=' . $this->app['resources']->getPath('cache/composer'));
+
             // Set working directory
-            chdir($this->getOption('basedir'));
+            chdir($this->getOptions()->baseDir());
 
-            // Use the factory to get a new Composer object
             try {
-                $this->composer = Factory::create($this->getIO(), $this->getOption('composerjson'), true);
-
-                // Add the event subscriber
-                $this->composer->getEventDispatcher()->addSubscriber($this->app['extend.listener']);
-
-                if (!$this->app['extend.manager']->useSsl()) {
-                    $this->setAllowSslDowngrade(true);
-                }
+                // Use the factory to get a new Composer object
+                $this->composer = Factory::create($this->getIO(), $this->getOptions()->composerJson()->getPath(), false);
+            } catch (\InvalidArgumentException $e) {
+                throw new PackageManagerException($e->getMessage(), $e->getCode(), $e);
             } catch (\Exception $e) {
                 $this->app['logger.system']->critical($e->getMessage(), ['event' => 'exception', 'exception' => $e]);
+                throw $e;
+            }
+
+            // Add the event subscriber
+            $this->composer->getEventDispatcher()->addSubscriber($this->app['extend.listener']);
+
+            if (!$this->app['extend.manager']->useSsl()) {
+                $this->setAllowSslDowngrade(true);
             }
         }
 
@@ -92,11 +102,7 @@ abstract class BaseAction
      */
     protected function getIO()
     {
-        if (!$this->io) {
-            $this->io = new BufferIO();
-        }
-
-        return $this->io;
+        return $this->app['extend.action.io'];
     }
 
     /**
@@ -150,39 +156,67 @@ abstract class BaseAction
     {
         $repos = $this->getComposer()->getRepositoryManager()->getRepositories();
 
+        /** @var ConfigurableRepositoryInterface $repo */
         foreach ($repos as $repo) {
+            if (!$repo instanceof ComposerRepository) {
+                continue;
+            }
             $reflection = new \ReflectionClass($repo);
             $allowSslDowngrade = $reflection->getProperty('allowSslDowngrade');
-            $allowSslDowngrade->setAccessible($choice);
+            $allowSslDowngrade->setAccessible(true);
             $allowSslDowngrade->setValue($repo, $choice);
         }
+
+        $config = $this->getComposer()->getConfig();
+        $reflection = new \ReflectionClass($config);
+        $property = $reflection->getProperty('config');
+        $property->setAccessible(true);
+        $values = $property->getValue($config);
+        $values['secure-http'] = !$choice;
+        $property->setValue($config, $values);
     }
 
     /**
      * Given a package name, this determines the best version to use in the require key.
      *
-     * This returns a version with the ~ operator prefixed when possible.
+     * This returns a version with the ^ operator prefixed when possible.
      *
-     * @param string $name
+     * @param string $packageName
+     * @param string $targetPackageVersion
+     * @param bool   $returnArray
      *
-     * @return array
+     * @throws \InvalidArgumentException
+     *
+     * @return PackageInterface|array
      */
-    protected function findBestVersionForPackage($name)
+    protected function findBestVersionForPackage($packageName, $targetPackageVersion = null, $returnArray = false)
     {
-        // find the latest version allowed in this pool
         $versionSelector = new VersionSelector($this->getPool());
-        $package = $versionSelector->findBestCandidate($name);
-
+        $package = $versionSelector->findBestCandidate($packageName, $targetPackageVersion, strtok(PHP_VERSION, '-'), $this->getComposer()->getPackage()->getStability());
         if (!$package) {
+            if ($returnArray === false) {
+                throw new \InvalidArgumentException(
+                    sprintf(
+                        'Could not find package %s at any version for your minimum-stability (%s). Check the package spelling or your minimum-stability',
+                        $packageName,
+                        $this->getMinimumStability()
+                    )
+                );
+            }
+
             return null;
         }
 
+        if ($returnArray === false) {
+            return $versionSelector->findRecommendedRequireVersion($package);
+        }
+
         return [
-            'name'          => $name,
+            'name'          => $packageName,
             'version'       => $package->getVersion(),
             'prettyversion' => $package->getPrettyVersion(),
             'package'       => $package,
-            'requirever'    => $versionSelector->findRecommendedRequireVersion($package)
+            'requirever'    => $versionSelector->findRecommendedRequireVersion($package),
         ];
     }
 
@@ -233,5 +267,35 @@ abstract class BaseAction
         }
 
         return $this->repos;
+    }
+
+    /**
+     * @param array $packages
+     *
+     * @return array
+     */
+    protected function formatRequirements(array $packages)
+    {
+        $requires = [];
+        $packages = $this->normalizeRequirements($packages);
+        foreach ($packages as $package) {
+            $requires[$package['name']] = $package['version'];
+        }
+
+        return $requires;
+    }
+
+    /**
+     * Parses a name/version pairs and returns an array of pairs.
+     *
+     * @param array $packages a set of package/version pairs separated by ":", "=" or " "
+     *
+     * @return array[] An array of arrays containing a name and (if provided) a version
+     */
+    protected function normalizeRequirements(array $packages)
+    {
+        $parser = new VersionParser();
+
+        return $parser->parseNameVersionPairs($packages);
     }
 }

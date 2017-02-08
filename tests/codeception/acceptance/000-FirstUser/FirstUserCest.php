@@ -11,12 +11,15 @@ class FirstUserCest
 {
     /** @var array */
     protected $user;
+    /** @var array */
+    protected $tokenNames;
 
     /**
      * @param \AcceptanceTester $I
      */
     public function _before(\AcceptanceTester $I)
     {
+        $this->tokenNames = Fixtures::get('tokenNames');
         $this->user = Fixtures::get('users');
     }
 
@@ -37,7 +40,7 @@ class FirstUserCest
         $I->wantTo('create the first user');
 
         // Ensure we're on the first user page
-        $I->amOnPage('/bolt/userfirst');
+        $I->amOnPage('/');
         $I->see('Please create the first user');
 
         // Fill in the form and submit
@@ -47,9 +50,13 @@ class FirstUserCest
         $I->fillField('form[email]',                 $this->user['admin']['email']);
         $I->fillField('form[displayname]',           $this->user['admin']['displayname']);
 
-        $I->click('input[type=submit]');
+        $I->click('button[type=submit]');
 
         // We should now be logged in an greeted!
         $I->see('Welcome to your new Bolt site');
+
+        // Check for nom nom
+        $I->seeCookie($this->tokenNames['session']);
+        $I->seeCookie($this->tokenNames['authtoken']);
     }
 }

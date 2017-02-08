@@ -1,5 +1,8 @@
 <?php
+
 namespace Bolt\Storage\Field\Type;
+
+use Doctrine\DBAL\Types\Type;
 
 /**
  * This is one of a suite of basic Bolt field transformers that handles
@@ -10,10 +13,18 @@ namespace Bolt\Storage\Field\Type;
 class TextAreaType extends FieldTypeBase
 {
     /**
-     * @inheritdoc
+     * {@inheritdoc}
      */
     public function getName()
     {
         return 'textarea';
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getStorageType()
+    {
+        return Type::getType('text');
     }
 }

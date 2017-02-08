@@ -18,16 +18,16 @@ class AuthenticationTest extends ControllerUnitTest
         $this->setRequest(Request::create('/bolt/login', 'POST', [
             'action'   => 'login',
             'username' => 'test',
-            'password' => 'pass'
+            'password' => 'pass',
         ]));
 
         $app = $this->getApp();
         $loginMock = $this->getLoginMock($app);
         $loginMock->expects($this->once())
             ->method('login')
-            ->with($this->equalTo($this->getRequest()), $this->equalTo('test'), $this->equalTo('pass'))
+            ->with($this->equalTo('test'), $this->equalTo('pass'))
             ->will($this->returnValue(true));
-        $this->setService('authentication.login', $loginMock);
+        $this->setService('access_control.login', $loginMock);
 
         $this->setSessionUser(new Entity\Users(['username' => 'test', 'roles' => []]));
         $this->addDefaultUser($this->getApp());
@@ -41,16 +41,16 @@ class AuthenticationTest extends ControllerUnitTest
         $this->setRequest(Request::create('/bolt/login', 'POST', [
             'action'   => 'login',
             'username' => 'test@example.com',
-            'password' => 'pass'
+            'password' => 'pass',
         ]));
 
         $app = $this->getApp();
         $loginMock = $this->getLoginMock($app);
         $loginMock->expects($this->once())
             ->method('login')
-            ->with($this->equalTo($this->getRequest()), $this->equalTo('test@example.com'), $this->equalTo('pass'))
+            ->with($this->equalTo('test@example.com'), $this->equalTo('pass'))
             ->will($this->returnValue(true));
-        $this->setService('authentication.login', $loginMock);
+        $this->setService('access_control.login', $loginMock);
 
         $this->setSessionUser(new Entity\Users(['username' => 'test', 'email' => 'test@example.com', 'roles' => []]));
         $this->addDefaultUser($this->getApp());
@@ -64,18 +64,18 @@ class AuthenticationTest extends ControllerUnitTest
         $this->setRequest(Request::create('/bolt/login', 'POST', [
             'action'   => 'login',
             'username' => 'test',
-            'password' => 'pass'
+            'password' => 'pass',
         ]));
 
         $app = $this->getApp();
         $loginMock = $this->getLoginMock($app);
         $loginMock->expects($this->once())
             ->method('login')
-            ->with($this->equalTo($this->getRequest()), $this->equalTo('test'), $this->equalTo('pass'))
+            ->with($this->equalTo('test'), $this->equalTo('pass'))
             ->will($this->returnValue(false));
-        $this->setService('authentication.login', $loginMock);
+        $this->setService('access_control.login', $loginMock);
 
-        $this->checkTwigForTemplate($this->getApp(), 'login/login.twig');
+        $this->checkTwigForTemplate($this->getApp(), '@bolt/login/login.twig');
         $this->controller()->postLogin($this->getRequest());
 
         // Test missing data fails
@@ -92,10 +92,10 @@ class AuthenticationTest extends ControllerUnitTest
     {
         $app = $this->getApp();
         $loginMock = $this->getLoginMock($app);
-        $loginMock->expects($this->any())
+        $loginMock->expects($this->once())
             ->method('login')
             ->will($this->returnValue(true));
-        $this->setService('authenticatio.loginn', $loginMock);
+        $this->setService('access_control.login', $loginMock);
 
         $this->setSessionUser(new Entity\Users(['username' => 'test', 'roles' => []]));
 
@@ -116,7 +116,7 @@ class AuthenticationTest extends ControllerUnitTest
         $loginMock->expects($this->any())
             ->method('login')
             ->will($this->returnValue(true));
-        $this->setService('authentication.login', $loginMock);
+        $this->setService('access_control.login', $loginMock);
 
         $passwordMock = $this->getMock(
             'Bolt\AccessControl\Password',
@@ -127,7 +127,7 @@ class AuthenticationTest extends ControllerUnitTest
             ->method('resetPasswordRequest')
             ->with($this->equalTo('admin'))
             ->will($this->returnValue(true));
-        $this->setService('authentication.password', $passwordMock);
+        $this->setService('access_control.password', $passwordMock);
 
         // Test missing username fails
         $this->setRequest(Request::create('/bolt/login', 'POST', ['action' => 'reset']));
@@ -148,11 +148,11 @@ class AuthenticationTest extends ControllerUnitTest
         $authentication->expects($this->once())
             ->method('revokeSession')
             ->will($this->returnValue(true));
-        $this->setService('authentication', $authentication);
+        $this->setService('access_control', $authentication);
 
         $this->setRequest(Request::create('/bolt/logout', 'POST', []));
 
-        $response = $this->controller()->logout();
+        $response = $this->controller()->logout($this->getRequest());
         $this->assertRegExp('|Redirecting to /bolt/login|', $response->getContent());
     }
 
@@ -167,7 +167,7 @@ class AuthenticationTest extends ControllerUnitTest
         $passwordMock->expects($this->once())
             ->method('resetPasswordConfirm')
             ->will($this->returnValue(true));
-        $this->setService('authentication.password', $passwordMock);
+        $this->setService('access_control.password', $passwordMock);
 
         $this->setRequest(Request::create('/bolt/resetpassword'));
         $response = $this->controller()->resetPassword($this->getRequest());

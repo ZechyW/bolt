@@ -27,14 +27,15 @@ class ExtendTest extends ControllerUnitTest
 
     public function testMethodsReturnTemplates()
     {
+        $this->getApp()->flush();
         $this->getService('twig.loader.filesystem')->prependPath(TEST_ROOT . '/app/view/twig');
 
         $this->setRequest(Request::create('/bolt/extend'));
         $response = $this->controller()->overview();
-        $this->assertEquals('extend/extend.twig', $response->getTemplateName());
+        $this->assertEquals('@bolt/extend/extend.twig', $response->getTemplateName());
 
         $response = $this->controller()->installPackage();
-        $this->assertEquals('extend/install-package.twig', $response->getTemplateName());
+        $this->assertEquals('@bolt/extend/_action-modal.twig', $response->getTemplateName());
 
         $this->setRequest(Request::create('/', 'GET', ['package' => 'bolt/theme-2014']));
         /** @var \Bolt\Controller\Backend\Extend|\PHPUnit_Framework_MockObject_MockObject $controller */
@@ -67,9 +68,10 @@ class ExtendTest extends ControllerUnitTest
 
     public function testOverview()
     {
+        $this->getApp()->flush();
         $this->allowLogin($this->getApp());
         $this->setRequest(Request::create('/bolt/extend'));
-        $this->checkTwigForTemplate($this->getApp(), 'extend/extend.twig');
+        $this->checkTwigForTemplate($this->getApp(), '@bolt/extend/extend.twig');
 
         $response = $this->controller()->overview();
 
@@ -78,9 +80,10 @@ class ExtendTest extends ControllerUnitTest
 
     public function testInstallPackage()
     {
+        $this->getApp()->flush();
         $this->allowLogin($this->getApp());
         $this->setRequest(Request::create('/bolt/extend/installPackage'));
-        $this->checkTwigForTemplate($this->getApp(), 'extend/install-package.twig');
+        $this->checkTwigForTemplate($this->getApp(), '@bolt/extend/_action-modal.twig');
 
         $response = $this->controller()->installPackage();
 
@@ -89,7 +92,8 @@ class ExtendTest extends ControllerUnitTest
 
     public function testInstallInfo()
     {
-        $mockInfo = $this->getMock('Bolt\Extensions\ExtensionsInfoService', ['info'], [], 'MockInfoService', false);
+        $this->getApp()->flush();
+        $mockInfo = $this->getMock('Bolt\Composer\Satis\QueryService', ['info'], [], 'MockInfoService', false);
         $mockInfo->expects($this->once())
             ->method('info')
             ->will($this->returnValue($this->packageInfoProvider()));
@@ -126,7 +130,7 @@ class ExtendTest extends ControllerUnitTest
                         [
                           0 => '1.0.0',
                           1 => 'dev-master',
-                        ]
+                        ],
                 ],
             'version' =>
                 [
@@ -162,8 +166,8 @@ class ExtendTest extends ControllerUnitTest
                         'type'        => 'bolt-extension',
                         'stability'   => 'dev',
                         'buildStatus' => 'untested',
-                    ]
-                ]
+                    ],
+                ],
             ];
         // This just ensures that the data matches the internal format of json decoded responses
         return json_decode(json_encode($info));

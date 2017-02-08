@@ -1,8 +1,27 @@
 <?php
 namespace Bolt\Exception;
 
+/**
+ * @deprecated Deprecated since 3.2, to be removed in 4.0. @see \Bolt\Exception\BootException
+ */
 class LowLevelDatabaseException extends LowlevelException
 {
+    public static function failedConnect($platform, \Exception $previous)
+    {
+        $error = <<<TEXT
+Bolt could not connect to the configured database.
+
+Things to check:
+&nbsp;&nbsp;* Ensure the $platform database is running
+&nbsp;&nbsp;* Check the <code>database:</code> parameters are configured correctly in <code>app/config/config.yml</code>
+&nbsp;&nbsp;&nbsp;&nbsp;* Database name is correct
+&nbsp;&nbsp;&nbsp;&nbsp;* User name has access to the named database
+&nbsp;&nbsp;&nbsp;&nbsp;* Password is correct
+TEXT;
+
+        return new static($error, $previous->getCode(), $previous);
+    }
+
     public static function missingParameter($parameter)
     {
         return new static("There is no <code>$parameter</code> set for your database.");
@@ -12,8 +31,8 @@ class LowLevelDatabaseException extends LowlevelException
     {
         return new static(
             sprintf(
-                "%s was selected as the database type, but the driver does not exist or is not loaded. " .
-                "Please install the %s driver.",
+                '%s was selected as the database type, but the driver does not exist or is not loaded. ' .
+                'Please install the %s driver.',
                 $name,
                 $driver
             )
@@ -29,7 +48,7 @@ class LowLevelDatabaseException extends LowlevelException
     {
         return new static(
             "There is no <code>password</code> set for the database connection, and you're using user 'root'.<br/> " .
-            "That must surely be a mistake, right? " .
+            'That must surely be a mistake, right? ' .
             "Bolt will stubbornly refuse to run until you've set a password for 'root'."
         );
     }
@@ -58,7 +77,7 @@ class LowLevelDatabaseException extends LowlevelException
     {
         return new static(
             sprintf(
-                "The database %s <code>%s</code> %s. " .
+                'The database %s <code>%s</code> %s. ' .
                 "Make sure it's present and writable to the user that the webserver is using.",
                 $type,
                 $path,

@@ -2,17 +2,16 @@
 
 namespace Bolt\Provider;
 
-use Bolt\Helpers\MenuBuilder;
+use Bolt\Menu\AdminMenuBuilder;
+use Bolt\Menu\MenuBuilder;
+use Bolt\Menu\MenuEntry;
 use Silex\Application;
 use Silex\ServiceProviderInterface;
 
 class MenuServiceProvider implements ServiceProviderInterface
 {
     /**
-     * Registers services on the given app.
-     *
-     * This method should only be used to configure services and parameters.
-     * It should not get services.
+     * {@inheritdoc}
      */
     public function register(Application $app)
     {
@@ -23,14 +22,23 @@ class MenuServiceProvider implements ServiceProviderInterface
                 return $builder;
             }
         );
+
+        /**
+         * @internal Backwards compatibility not guaranteed on this provider presently.
+         */
+        $app['menu.admin'] = $app->share(
+            function ($app) {
+                $baseUrl = rtrim($app['resources']->getUrl('root'), '/') . $app['config']->get('general/branding/path');
+                $adminMenu = new AdminMenuBuilder(new MenuEntry('root', $baseUrl));
+                $rootEntry = $adminMenu->build($app);
+
+                return $rootEntry;
+            }
+        );
     }
 
     /**
-     * Bootstraps the application.
-     *
-     * This method is called after all services are registered
-     * and should be used for "dynamic" configuration (whenever
-     * a service must be requested).
+     * {@inheritdoc}
      */
     public function boot(Application $app)
     {

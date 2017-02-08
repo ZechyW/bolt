@@ -19,12 +19,12 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
     {
         $container = new \Pimple(
             [
-                'rootpath'    => TEST_ROOT,
-                'pathmanager' => new PlatformFileSystemPathFactory()
+                'rootpath'    => PHPUNIT_WEBROOT,
+                'pathmanager' => new PlatformFileSystemPathFactory(),
             ]
         );
         $config = new ResourceManager($container);
-        $this->assertEquals(Path::fromString(TEST_ROOT), \PHPUnit_Framework_Assert::readAttribute($config, 'root'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT), \PHPUnit_Framework_Assert::readAttribute($config, 'root'));
     }
 
     public function testDefaultPaths()
@@ -32,18 +32,18 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
-        $this->assertEquals(Path::fromString(TEST_ROOT), $config->getPath('rootpath'));
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/app'), $config->getPath('apppath'));
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/extensions'), $config->getPath('extensions'));
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/files'), $config->getPath('filespath'));
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/.'), $config->getPath('web'));
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/app/cache'), $config->getPath('cache'));
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/app/config'), $config->getPath('config'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT), $config->getPath('rootpath'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT . '/app'), $config->getPath('apppath'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT . '/extensions'), $config->getPath('extensions'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT . '/files'), $config->getPath('filespath'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT), $config->getPath('web'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT . '/app/cache'), $config->getPath('cache'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT . '/app/config'), $config->getPath('config'));
     }
 
     /**
@@ -55,8 +55,8 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
@@ -68,7 +68,7 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         return [
             [''],
             ['FAKE_PATH'],
-            ['FAKE_PATH/test']
+            ['FAKE_PATH/test'],
         ];
     }
 
@@ -77,15 +77,15 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
-        $this->assertEquals(Path::fromString(TEST_ROOT), $config->getPath('root'));
-        $this->assertEquals(Path::fromString(TEST_ROOT), $config->getPath('rootpath'));
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/app'), $config->getPath('app'));
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/files'), $config->getPath('files'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT), $config->getPath('root'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT), $config->getPath('rootpath'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT . '/app'), $config->getPath('app'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT . '/files'), $config->getPath('files'));
         $this->assertInstanceOf('Eloquent\Pathogen\PathInterface', $config->getPathObject('root'));
     }
 
@@ -94,13 +94,13 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
 
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/app/cache/test'), $config->getPath('cache/test'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT . '/app/cache/test'), $config->getPath('cache/test'));
     }
 
     public function testDefaultUrls()
@@ -108,8 +108,8 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
@@ -130,8 +130,8 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
@@ -142,7 +142,7 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
     {
         return [
             [''],
-            ['FAKE_URL']
+            ['FAKE_URL'],
         ];
     }
 
@@ -151,18 +151,17 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
-        $config->compat();
 
         $app = new Application(['resources' => $config]);
         $this->assertEquals($config->getPaths(), $app['resources']->getPaths());
 
         // Test that the Application has initialised the resources, injecting in config values.
-        $this->assertContains(Path::fromString(TEST_ROOT . '/theme')->string(), $config->getPath('theme'));
+        $this->assertContains(Path::fromString(PHPUNIT_WEBROOT . '/theme')->string(), $config->getPath('theme'));
         $this->assertNotEmpty($config->getUrl('canonical'));
     }
 
@@ -171,17 +170,17 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
         $app = new Application(['resources' => $config]);
-        $this->assertEquals('cli', $config->getRequest('protocol'));
-        $this->assertEquals('bolt.dev', $config->getRequest('hostname'));
-        $this->assertEquals('http://bolt.dev/bolt', $config->getUrl('canonical'));
-        $this->assertEquals('cli://bolt.dev', $config->getUrl('host'));
-        $this->assertEquals('http://bolt.dev/', $config->getUrl('rooturl'));
+        $this->assertEquals('http', $config->getRequest('protocol'));
+        $this->assertEquals('bolt.test', $config->getRequest('hostname'));
+        $this->assertEquals('http://bolt.test/bolt', $config->getUrl('canonical'));
+        $this->assertEquals('http://bolt.test', $config->getUrl('host'));
+        $this->assertEquals('http://bolt.test/', $config->getUrl('rooturl'));
     }
 
     /**
@@ -193,8 +192,8 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
@@ -205,7 +204,7 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
     {
         return [
             [''],
-            ['FAKE_REQUEST']
+            ['FAKE_REQUEST'],
         ];
     }
 
@@ -218,24 +217,22 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
             [],
             [],
             [
-                'HTTP_HOST'       => 'test.dev',
-                'SERVER_PROTOCOL' => 'https'
+                'HTTP_HOST'       => 'test.test',
+                'SERVER_PROTOCOL' => 'https',
             ]
         );
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
+                    'rootpath'    => PHPUNIT_WEBROOT,
                     'request'     => $request,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
-        $config->compat();
-        $app = new Application(['resources' => $config]);
+        new Application(['resources' => $config]);
         $this->assertEquals('https', $config->getRequest('protocol'));
-        $this->assertEquals('test.dev', $config->getRequest('hostname'));
-        $this->assertEquals('http://bolt.dev/bolt/test/location', $config->getUrl('canonical'));
+        $this->assertEquals('test.test', $config->getRequest('hostname'));
     }
 
     public function testNonRootDirectory()
@@ -249,16 +246,16 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
             [
                 'SCRIPT_NAME'     => '/sub/directory/index.php',
                 'PHP_SELF'        => '/sub/directory/index.php',
-                'SCRIPT_FILENAME' => '/path/to/sub/directory/index.php'
+                'SCRIPT_FILENAME' => '/path/to/sub/directory/index.php',
             ]
         );
 
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
+                    'rootpath'    => PHPUNIT_WEBROOT,
                     'request'     => $request,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
@@ -276,8 +273,8 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
@@ -291,8 +288,8 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
@@ -314,16 +311,16 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
             [
                 'SCRIPT_NAME'     => '/sub/directory/index.php',
                 'PHP_SELF'        => '/sub/directory/index.php',
-                'SCRIPT_FILENAME' => '/path/to/sub/directory/index.php'
+                'SCRIPT_FILENAME' => '/path/to/sub/directory/index.php',
             ]
         );
 
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
+                    'rootpath'    => PHPUNIT_WEBROOT,
                     'request'     => $request,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
@@ -342,30 +339,30 @@ class ResourceManagerTest extends \PHPUnit_Framework_TestCase
         $config = new ResourceManager(
             new \Pimple(
                 [
-                    'rootpath'    => TEST_ROOT,
-                    'pathmanager' => new PlatformFileSystemPathFactory()
+                    'rootpath'    => PHPUNIT_WEBROOT,
+                    'pathmanager' => new PlatformFileSystemPathFactory(),
                 ]
             )
         );
 
-        $rel = $config->findRelativePath(TEST_ROOT, TEST_ROOT . '/A/B');
+        $rel = $config->findRelativePath(PHPUNIT_WEBROOT, PHPUNIT_WEBROOT . '/A/B');
         $this->assertEquals('A/B/', $rel);
     }
 
     public function testSetThemePath()
     {
-        $config = new Standard(TEST_ROOT);
+        $config = new Standard(PHPUNIT_WEBROOT);
         $theme = ['theme' => 'test'];
         $config->setThemePath($theme);
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/theme/test'), $config->getPath('theme'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT . '/theme/test'), $config->getPath('theme'));
         $theme = ['theme' => 'test', 'theme_path' => '/testpath'];
         $config->setThemePath($theme);
-        $this->assertEquals(Path::fromString(TEST_ROOT . '/testpath/test'), $config->getPath('theme'));
+        $this->assertEquals(Path::fromString(PHPUNIT_WEBROOT . '/testpath/test'), $config->getPath('theme'));
     }
 
     public function testStaticApp()
     {
-        $config = new Standard(TEST_ROOT);
+        $config = new Standard(PHPUNIT_WEBROOT);
         $app = new Application(['resources' => $config]);
         $app2 = ResourceManager::getApp();
         $this->assertEquals($app, $app2);

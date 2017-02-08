@@ -8,13 +8,14 @@ namespace Bolt\Asset\File;
  */
 class Stylesheet extends FileAssetBase
 {
+    /** @var string */
+    protected $type = 'stylesheet';
+
     /**
      * {@inheritdoc}
      */
     public function __toString()
     {
-        $hash = $this->cacheHash ? '?v=' . $this->cacheHash : $this->cacheHash;
-
-        return sprintf('<link rel="stylesheet" href="%s%s" media="screen">', $this->fileName, $hash);
+        return sprintf('<link rel="stylesheet" href="%s" media="screen">', $this->url);
     }
 }

@@ -2,11 +2,11 @@
 
 namespace Bolt\Logger\Handler;
 
-use Bolt\Application;
-use Bolt\Content;
 use Bolt\DeepDiff;
+use Bolt\Legacy\Content;
 use Monolog\Handler\AbstractProcessingHandler;
 use Monolog\Logger;
+use Silex\Application;
 
 /**
  * Monolog Database handler for record changes (changelog).
@@ -17,13 +17,10 @@ class RecordChangeHandler extends AbstractProcessingHandler
 {
     /** @var Application */
     private $app;
-
     /** @var boolean */
     private $initialized = false;
-
     /** @var string */
     private $tablename;
-
     /** @var array */
     private $allowed;
 
@@ -53,7 +50,12 @@ class RecordChangeHandler extends AbstractProcessingHandler
 
         $record = $this->processRecord($record);
         $record['formatted'] = $this->getFormatter()->format($record);
-        $this->write($record);
+
+        try {
+            $this->write($record);
+        } catch (\Exception $e) {
+            // Nothing.
+        }
 
         return false === $this->bubble;
     }
@@ -70,54 +72,39 @@ class RecordChangeHandler extends AbstractProcessingHandler
             $this->initialize();
         }
 
+        // Get the context values
+        $context = $record['context'];
+
         // Check for a valid call
-        if (!in_array($record['context']['action'], $this->allowed)) {
-            throw new \Exception("Invalid action '{$record['context']['action']}' specified for changelog (must be one of [ " . implode(', ', $this->allowed) . " ])");
-        }
-        if (empty($record['context']['old']) && empty($record['context']['new'])) {
-            throw new \Exception("Tried to log something that cannot be: both old and new content are empty");
-        }
-        if (empty($record['context']['old']) && in_array($record['context']['action'], ['UPDATE', 'DELETE'])) {
-            throw new \Exception("Cannot log action '{$record['context']['action']}' when old content doesn't exist");
-        }
-        if (empty($record['context']['new']) && in_array($record['context']['action'], ['INSERT', 'UPDATE'])) {
-            throw new \Exception("Cannot log action '{$record['context']['action']}' when new content is empty");
-        }
+        $this->checkTransaction($context);
 
-        $data = [];
-        switch ($record['context']['action']) {
-            case 'UPDATE':
-                $diff = DeepDiff::diff($record['context']['old'], $record['context']['new']);
-                foreach ($diff as $item) {
-                    list($k, $old, $new) = $item;
-                    if (isset($record['context']['new'][$k])) {
-                        $data[$k] = [$old, $new];
-                    }
-                }
-                break;
-            case 'INSERT':
-                foreach ($record['context']['new'] as $k => $val) {
-                    $data[$k] = [null, $val];
-                }
-                break;
-            case 'DELETE':
-                foreach ($record['context']['old'] as $k => $val) {
-                    $data[$k] = [$val, null];
-                }
-                break;
-        }
+        // Get the context data
+        $data = $this->getData($context);
 
-        if ($record['context']['new']) {
-            $content = new Content($this->app, $record['context']['contenttype'], $record['context']['new']);
-        } else {
-            $content = new Content($this->app, $record['context']['contenttype'], $record['context']['old']);
-        }
+        if ($context['old'] instanceof \Bolt\Legacy\Content || $context['new'] instanceof \Bolt\Legacy\Content) {
+            // Get the ContentType
+            $contenttype = $context['contenttype'];
+            if (!is_array($contenttype)) {
+                $contenttype = $this->app['storage']->getContentType($contenttype);
+            }
 
-        $title = $content->getTitle();
-        if (empty($title)) {
-            /** @var \Bolt\Content $content */
-            $content = $this->app['storage']->getContent($record['context']['contenttype'] . '/' . $record['context']['id']);
+            // Get the content object.
+            $values = $context['new'] ?: $context['old'];
+            $content = $this->getContentObject($contenttype, $values);
+
             $title = $content->getTitle();
+            if (empty($title)) {
+                /** @var \Bolt\Legacy\Content $content */
+                $content = $this->app['storage']->getContent($context['contenttype'] . '/' . $context['id']);
+                $title = $content->getTitle();
+            }
+
+            $contenttype = $context['contenttype'];
+        } else {
+            $title = $context['new'] ? $context['new']['title'] : $context['old']['title'];
+            unset($data['bolt_csrf_token']);
+
+            $contenttype = $context['contenttype'];
         }
 
         // Don't store datechanged, or records that are only datechanged
@@ -129,22 +116,104 @@ class RecordChangeHandler extends AbstractProcessingHandler
         $str = json_encode($data);
         $user = $this->app['users']->getCurrentUser();
 
-        try {
-            $this->app['db']->insert(
-                $this->tablename,
-                [
-                    'date'          => $record['datetime']->format('Y-m-d H:i:s'),
-                    'ownerid'       => $user['id'],
-                    'title'         => $title,
-                    'contenttype'   => $record['context']['contenttype'],
-                    'contentid'     => $record['context']['id'],
-                    'mutation_type' => $record['context']['action'],
-                    'diff'          => $str,
-                    'comment'       => $record['context']['comment']
-                ]
-            );
-        } catch (\Exception $e) {
-            // Nothing.
+        $this->app['db']->insert(
+            $this->tablename,
+            [
+                'date'          => $record['datetime']->format('Y-m-d H:i:s'),
+                'ownerid'       => $user['id'],
+                'title'         => $title,
+                'contenttype'   => is_array($contenttype) ? $contenttype['slug'] : $contenttype,
+                'contentid'     => $context['id'],
+                'mutation_type' => $context['action'],
+                'diff'          => $str,
+                'comment'       => $context['comment'],
+            ]
+        );
+    }
+
+    /**
+     * Check that the requested log transaction is valid.
+     *
+     * @param array $context
+     *
+     * @throws \UnexpectedValueException
+     */
+    protected function checkTransaction(array $context)
+    {
+        if (!in_array($context['action'], $this->allowed)) {
+            throw new \UnexpectedValueException("Invalid action '{$context['action']}' specified for changelog (must be one of [ " . implode(', ', $this->allowed) . ' ])');
+        }
+        if (empty($context['old']) && empty($context['new'])) {
+            throw new \UnexpectedValueException('Tried to log something that cannot be: both old and new content are empty');
+        }
+        if (empty($context['old']) && in_array($context['action'], ['UPDATE', 'DELETE'])) {
+            throw new \UnexpectedValueException("Cannot log action '{$context['action']}' when old content doesn't exist");
+        }
+        if (empty($context['new']) && in_array($context['action'], ['INSERT', 'UPDATE'])) {
+            throw new \UnexpectedValueException("Cannot log action '{$context['action']}' when new content is empty");
+        }
+    }
+
+    /**
+     * Get the context data.
+     *
+     * @param array $context
+     *
+     * @return array
+     */
+    protected function getData(array $context)
+    {
+        $data = [];
+        switch ($context['action']) {
+            case 'UPDATE':
+                $diff = DeepDiff::diff($context['old'], $context['new']);
+                foreach ($diff as $item) {
+                    list($k, $old, $new) = $item;
+                    if (isset($context['new'][$k])) {
+                        $data[$k] = [$old, $new];
+                    }
+                }
+                break;
+            case 'INSERT':
+                foreach ($context['new'] as $k => $val) {
+                    $data[$k] = [null, $val];
+                }
+                break;
+            case 'DELETE':
+                foreach ($context['old'] as $k => $val) {
+                    $data[$k] = [$val, null];
+                }
+                break;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Get the content object.
+     *
+     * @param array $contenttype
+     * @param array $values
+     *
+     * @return \Bolt\Legacy\Content
+     */
+    protected function getContentObject(array $contenttype, array $values)
+    {
+        if (!empty($contenttype['class'])) {
+            if (class_exists($contenttype['class'])) {
+                $content = new $contenttype['class']($this->app, $contenttype, $values);
+
+                if (!($content instanceof Content)) {
+                    throw new \Exception($contenttype['class'] . ' does not extend \\Bolt\\Content.');
+                }
+
+                return $content;
+            }
+
+            $msg = sprintf('The ContentType %s has an invalid class specified. Unable to log the changes to its records', $contenttype['slug'], $contenttype['class']);
+            $this->app['logger.system']->error($msg, ['event' => 'content']);
+        } else {
+            return new Content($this->app, $contenttype, $values);
         }
     }
 
@@ -153,7 +222,7 @@ class RecordChangeHandler extends AbstractProcessingHandler
      */
     private function initialize()
     {
-        $this->tablename = sprintf("%s%s", $this->app['config']->get('general/database/prefix', "bolt_"), 'log_change');
+        $this->tablename = sprintf('%s%s', $this->app['config']->get('general/database/prefix', 'bolt_'), 'log_change');
         $this->allowed = ['INSERT', 'UPDATE', 'DELETE'];
         $this->initialized = true;
     }

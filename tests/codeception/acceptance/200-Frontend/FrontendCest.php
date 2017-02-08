@@ -42,8 +42,6 @@ class FrontendCest
 
         $I->see('A sample site');
         $I->see('Recent Pages');
-        $I->see('Recent Entries');
-        $I->see('Recent Showcases');
         $I->dontSee('Recent Resources');
 
         $I->see('A Page I Made', 'h1');
@@ -59,8 +57,12 @@ class FrontendCest
     {
         $I->wantTo('see that there are no session cookies set.');
 
-        $I->amOnPage('/');
+        $I->resetCookie($this->tokenNames['session']);
 
+        $I->amOnPage('/');
+        $I->dontSeeCookie($this->tokenNames['session']);
+
+        $I->amOnPage('/thumbs/42x42c/koala.jpg');
         $I->dontSeeCookie($this->tokenNames['session']);
     }
 
@@ -91,7 +93,7 @@ class FrontendCest
 
         $I->amOnPage('/contact');
 
-        $I->see("This is the contact text");
+        $I->seeInSource('This is the contact text');
     }
 
     /**
@@ -105,8 +107,8 @@ class FrontendCest
 
         $I->amOnPage('/resources');
 
-        $I->see('Well, this is kind of embarrassing!');
-        $I->see('You have what we call in the business, a 404.');
+        $I->see('404 not found');
+        $I->see('The requested page was not found.');
     }
 
     /**
@@ -120,8 +122,8 @@ class FrontendCest
 
         $I->amOnPage('/derp-a-derp');
 
-        $I->see('Well, this is kind of embarrassing!');
-        $I->see('You have what we call in the business, a 404.');
+        $I->see('404 not found');
+        $I->see('The requested page was not found.');
     }
 
     /**
@@ -152,7 +154,7 @@ class FrontendCest
 
         $I->amOnPage('/');
         $I->seeElement('a', ['href' => '/', 'class' => 'first']);
-        $I->seeElement('li', ['class' => 'index-1 first active']);
+        $I->seeElement('li', ['class' => 'index-1 menu-text first active']);
 
         $I->amOnPage('/pages');
         $I->seeElement('li', ['class' => 'index-3 active']);

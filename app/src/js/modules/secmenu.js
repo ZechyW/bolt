@@ -9,6 +9,8 @@
  * @param {Object} window - Window object.
  */
 (function (bolt, $, window) {
+    'use strict';
+
     /**
      * Bolt.secmenu mixin container.
      *
@@ -18,32 +20,6 @@
     var secmenu = {};
 
     /**
-     * Initializes the mixin.
-     *
-     * @static
-     * @function init
-     * @memberof Bolt.secmenu
-     */
-    secmenu.init = function () {
-        var usePopOvers = !$('.navbar-toggle').is(':visible');
-
-        // Initialize the secondary menu in the sidebar.
-        initSidebarToggle();
-        initSidebarCollapse();
-        initSidebarExpand();
-        if ($('#navpage-secondary').length) {
-            adjustSidebarHeight();
-        }
-
-        // Initialize the submenu
-        if (usePopOvers) {
-            initPopOvers();
-        } else {
-            initMobileSubmenu();
-        }
-    };
-
-    /**
      * Timeout to open/close the popover submenu.
      *
      * @private
@@ -51,24 +27,6 @@
      * @memberof Bolt.secmenu
      */
     var timeout = 0;
-
-    /**
-     * Make sure the sidebar is as long as the document height.
-     *
-     * @private
-     * @function adjustSidebarHeight
-     * @memberof Bolt.secmenu
-     */
-    function adjustSidebarHeight() {
-        var newHeight = $(document).height() - $('#navpage-secondary').position().top,
-            next = 3000;
-
-        if (newHeight !== $('#navpage-secondary').outerHeight()) {
-            $('#navpage-secondary').outerHeight(newHeight);
-            next = 300;
-        }
-        window.setTimeout(adjustSidebarHeight, next);
-    }
 
     /**
      * Initialize the menu toogle, that shows/hides secondary navigation.
@@ -111,6 +69,8 @@
                 path: '/'
             });
 
+            $('#bolt-footer').addClass('bolt-footer-hidden');
+
             return false;
         });
     }
@@ -131,8 +91,35 @@
                 path: '/'
             });
 
+            $('#bolt-footer').removeClass('bolt-footer-hidden');
+
             return false;
         });
+    }
+
+    /**
+     * Make sure the sidebar is as long as the content height.
+     *
+     * @private
+     * @function adjustSidebarHeight
+     * @memberof Bolt.secmenu
+     */
+    function adjustSidebarHeight() {
+        var contentHeight = $('#navpage-content').outerHeight(),
+            sidebarObj = $('#navpage-secondary'),
+            sidebarHeight = sidebarObj.outerHeight(),
+            docHeight = $(document).height() - sidebarObj.position().top,
+            newHeight = Math.max(contentHeight, docHeight),
+            next = 5000;
+
+        // If the sidebar height doesn't match the content's height, then adjust it. Check back
+        // sooner, so we can adjust again if necessary (the content might still be changing).
+        if (sidebarHeight !== newHeight) {
+            sidebarObj.outerHeight(newHeight);
+            next = 500;
+        }
+
+        window.setTimeout(adjustSidebarHeight, next);
     }
 
     /**
@@ -200,7 +187,7 @@
      * @memberof Bolt.secmenu
      */
     function initMobileSubmenu() {
-        $('#navpage-secondary a.menu-pop').on('click', function(e) {
+        $('#navpage-secondary a.menu-pop').on('click', function (e) {
             var submenu = $(this).nextAll('.submenu');
 
             e.preventDefault();
@@ -213,6 +200,32 @@
             }
         });
     }
+
+    /**
+     * Initializes the mixin.
+     *
+     * @static
+     * @function init
+     * @memberof Bolt.secmenu
+     */
+    secmenu.init = function () {
+        var usePopOvers = !$('.navbar-toggle').is(':visible');
+
+        // Initialize the secondary menu in the sidebar.
+        initSidebarToggle();
+        initSidebarCollapse();
+        initSidebarExpand();
+        if ($('#navpage-secondary').length) {
+            adjustSidebarHeight();
+        }
+
+        // Initialize the submenu
+        if (usePopOvers) {
+            initPopOvers();
+        } else {
+            initMobileSubmenu();
+        }
+    };
 
     // Apply mixin container.
     bolt.secmenu = secmenu;

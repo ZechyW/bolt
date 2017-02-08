@@ -19,12 +19,13 @@ class FileManagerTest extends ControllerUnitTest
 
         $response = $this->controller()->edit($this->getRequest(), 'config', 'config.yml');
 
-        $this->assertEquals('editfile/editfile.twig', $response->getTemplateName());
+        $this->assertEquals('@bolt/editfile/editfile.twig', $response->getTemplateName());
     }
 
     public function testManage()
     {
-        $this->removeCSRF($this->getApp());
+        $app = $this->getApp();
+        $this->removeCSRF($app);
         $this->setRequest(Request::create('/bolt/files'));
 
         $response = $this->controller()->manage($this->getRequest(), 'files', '');
@@ -35,7 +36,7 @@ class FileManagerTest extends ControllerUnitTest
         $this->assertEquals([], $context['context']['files']);
 
         // Try and upload a file
-        $perms = $this->getMock('Bolt\Filesystem\FilePermissions', ['allowedUpload'], [$this->getApp()]);
+        $perms = $this->getMock('Bolt\Filesystem\FilePermissions', ['allowedUpload'], [$app['config']]);
         $perms->expects($this->any())
             ->method('allowedUpload')
             ->will($this->returnValue(true));
@@ -52,10 +53,10 @@ class FileManagerTest extends ControllerUnitTest
                         new UploadedFile(
                             PHPUNIT_ROOT . '/resources/generic-logo-evil.exe',
                             'logo.exe'
-                        )
+                        ),
                     ],
-                    '_token'     => 'xyz'
-                ]
+                    '_token'     => 'xyz',
+                ],
             ]
         ));
 

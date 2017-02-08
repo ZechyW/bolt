@@ -1,9 +1,5 @@
 {#=== INIT ===========================================================================================================#}
 
-{% set magic_date = '1900-01-01 00:00:00' %}
-{% set can_publish = isallowed('contenttype:' ~ context.contenttype.slug ~ ':publish:' ~ context.content.id) %}
-{% set can_depublish = isallowed('contenttype:' ~ context.contenttype.slug ~ ':depublish:' ~ context.content.id) %}
-
 {% set attributes = {
     id: {
         class:     'form-control narrow',
@@ -14,34 +10,35 @@
     },
 
     publish: {
-        disabled: (not can_publish),
+        disabled: (not context.can.publish),
         id:       'datepublish',
-        value:    ((context.content.datepublish == magic_date) ? '' : (context.content.datepublish == '') ? "now"|date('Y-m-d H:i:s') : context.content.datepublish),
+        value:    (context.content.datepublish == '') ? "now"|date('Y-m-d H:i:s') : context.content.datepublish,
     },
 
     depublish: {
-        disabled:  (not can_depublish),
+        disabled:  (not context.can.depublish),
         id:        'datedepublish',
-        value:     (context.content.datedepublish == magic_date) ? '' : context.content.datedepublish,
-        notice:     __('Depublish date is in the past. Change the status if you want to depublish now'),
+        value:     context.values.datedepublish,
+        notice:     __('general.phrase.depublish-date-past'),
     },
 
     status: {
-        class:     'form-control narrow',
+        class:     'form-control',
         disabled:  (context.allowed_status|length <= 1),
         id:        'statusselect',
         name:      'status',
     },
 
     ownerid: {
-        class:     'form-control narrow',
-        disabled:  (not isallowed('contenttype:' ~ context.contenttype.slug ~ ':change-ownership:' ~ context.content.id)),
+        class:     'form-control',
+        disabled:  (not context.can.change_ownership),
+        id:        'ownerid',
         name:      'ownerid',
     },
 
     comment: {
         class:        'form-control',
-        disabled:     (not isallowed('contenttype:' ~ context.contenttype.slug ~ ':change-ownership:' ~ context.content.id)),
+        disabled:     (not context.can.change_ownership),
         name_id:      'changelog-comment',
         placeholder:  __('Add a brief, optional comment to describe what\'s changed.'),
         type:         'text',
@@ -50,44 +47,41 @@
 
 {#=== FIELDSET =======================================================================================================#}
 
-{% extends '_base/_fieldset.twig' %}
+{% extends '@bolt/_base/_fieldset.twig' %}
 
-{% block fieldset_type 'text' %}
+{% block fieldset_type 'meta' %}
+{% block fieldset_widget 'fieldMeta' %}
 
-{% block fieldset_label_text  __('Meta information') %}
+{% block fieldset_label_text  __('general.phrase.meta-information') %}
 {% block fieldset_label_class 'col-xs-12' ~ (context.has.tabs ? '' : ' hidden') %}
 
 {% block fieldset_controls %}
+    {% from '@bolt/_buic/_moment.twig' import buic_moment %}
+
     <div class="col-xs-12">
         {% if not context.has.tabs %}
             <h3>
-                {{ __('Meta information') }}
+                {{ __('general.phrase.meta-information') }}
             </h3>
         {% endif %}
 
         <div class="form-group">
-            <label class="col-sm-4 control-label">{{ __('Id (№)') }}</label>
+            <label class="col-sm-4 control-label">{{ __('general.phrase.id') }} (№)</label>
             <div class="col-sm-8">
                 <input{{ macro.attr(attributes.id) }}>
+                {% if context.content.datecreated > '1970-01-01 01:01:01' %}
+                    <p class="form-control-static">
+                        {{ __('contenttypes.generic.created', {'%contenttype%': context.contenttype.slug}) }}
+                        {{ buic_moment(context.content.datecreated) }}
+                        {{ __('general.phrase.edited') }}
+                        {{ buic_moment(context.content.datechanged) }}.
+                    </p>
+                {% endif %}
             </div>
         </div>
 
         <div class="form-group">
-            <label class="col-sm-4 control-label">{{ __('Publication date:') }}</label>
-            <div class="col-sm-8">
-                {{ macro.input_datetime(attributes.publish) }}
-            </div>
-        </div>
-
-        <div class="form-group depublish-group">
-            <label class="col-sm-4 control-label">{{ __('Depublication date:') }}</label>
-            <div class="col-sm-8">
-                {{ macro.input_datetime(attributes.depublish) }}
-            </div>
-        </div>
-
-        <div class="form-group">
-            <label class="col-sm-4 control-label">{{ __('Status:') }}</label>
+            <label class="col-sm-4 control-label">{{ __('general.phrase.status-colon') }}</label>
             <div class="col-sm-8">
                 <select{{ macro.attr(attributes.status) }}>
                     {% for status in context.allowed_status %}
@@ -98,19 +92,31 @@
                         <option{{ macro.attr(attr_opt) }}>{{ status_names[status] }}</option>
                     {% endfor %}
                 </select>
-                {% if context.content.datecreated > '1970-01-01 01:01:01' %}
-                    <p class="form-control-static">
-                        {{ __('contenttypes.generic.created', {'%contenttype%': context.contenttype.slug}) }}
-                        {{ macro.timemoment(context.content.datecreated) }}
-                        {{ __('and edited') }}
-                        {{ macro.timemoment(context.content.datechanged) }}.
-                    </p>
-                {% endif %}
+                <p class="form-control-static">
+                    {{ __('general.phrase.status-explanation') }}
+                </p>
             </div>
         </div>
 
         <div class="form-group">
-            <label class="col-sm-4 control-label">{{ __('Owner:') }}</label>
+            <label class="col-sm-4 control-label">{{ __('general.phrase.publication-date-colon') }}</label>
+            <div class="col-sm-8">
+                {{ macro.input_datetime(attributes.publish) }}
+            </div>
+        </div>
+
+        <div class="form-group depublish-group">
+            <label class="col-sm-4 control-label">{{ __('general.phrase.depublication-date-colon') }}</label>
+            <div class="col-sm-8">
+                {{ macro.input_datetime(attributes.depublish) }}
+                <p class="form-control-static">
+                    {{ __('general.phrase.depublish-explanation') }}
+                </p>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-4 control-label">{{ __('general.phrase.owner-colon') }}</label>
             <div class="col-sm-8">
                 <select{{ macro.attr(attributes.ownerid) }}>
                     {% for user in users %}
@@ -124,9 +130,9 @@
             </div>
         </div>
 
-        {% if ischangelogenabled() %}
+        {% if config.get('general/changelog/enabled') %}
             <div class="form-group">
-                <label class="col-sm-4 control-label">{{ __('Add a comment:') }}</label>
+                <label class="col-sm-4 control-label">{{ __('contenttypes.record.comment-add-colon') }}</label>
                 <div class="col-sm-8">
                     <input{{ macro.attr(attributes.comment) }}>
                 </div>

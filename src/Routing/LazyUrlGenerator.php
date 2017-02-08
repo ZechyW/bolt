@@ -13,7 +13,7 @@ use Symfony\Component\Routing\RequestContext;
  */
 class LazyUrlGenerator implements UrlGeneratorInterface
 {
-    /** @var \Closure $factory */
+    /** @var callable $factory */
     private $factory;
     /** @var UrlGeneratorInterface $urlGenerator */
     private $urlGenerator;
@@ -21,15 +21,15 @@ class LazyUrlGenerator implements UrlGeneratorInterface
     /**
      * LazyUrlGenerator constructor.
      *
-     * @param \Closure $factory Should return UrlGeneratorInterface when invoked
+     * @param callable $factory Should return UrlGeneratorInterface when invoked
      */
-    public function __construct(\Closure $factory)
+    public function __construct(callable $factory)
     {
         $this->factory = $factory;
     }
 
     /**
-     * @inheritdoc
+     * {@inheritdoc}
      */
     public function setContext(RequestContext $context)
     {
@@ -52,7 +52,7 @@ class LazyUrlGenerator implements UrlGeneratorInterface
     }
 
     /**
-     * @inheritdoc
+     * {@inheritdoc}
      */
     public function getContext()
     {
@@ -60,7 +60,7 @@ class LazyUrlGenerator implements UrlGeneratorInterface
     }
 
     /**
-     * @inheritdoc
+     * {@inheritdoc}
      */
     public function generate($name, $parameters = [], $referenceType = self::ABSOLUTE_PATH)
     {

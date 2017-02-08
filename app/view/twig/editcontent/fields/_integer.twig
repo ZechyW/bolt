@@ -30,13 +30,13 @@
         step:            option.step,
         title:           option.title,
         type:            'number',
-        value:           0 + context.content.get(contentkey),
+        value:           1 * context.content.get(contentkey)|default(field.default)|default(0),
     }
 } %}
 
 {#=== FIELDSET =======================================================================================================#}
 
-{% extends '_base/_fieldset.twig' %}
+{% extends '@bolt/_base/_fieldset.twig' %}
 
 {% block fieldset_type 'integer' %}
 

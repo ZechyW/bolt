@@ -2,10 +2,8 @@
 
 namespace Bolt\Logger;
 
-use Bolt\Pager;
 use Bolt\Storage\Repository;
-use Doctrine\DBAL\DBALException;
-use Doctrine\DBAL\Query\QueryBuilder;
+use Doctrine\DBAL\Exception\TableNotFoundException;
 use Silex\Application;
 
 /**
@@ -25,9 +23,9 @@ class Manager
     /**
      * Constructor.
      *
-     * @param Application $app
-     * @param Repository\LogChange $changeRepository
-     * @param Repository\LogSystem $systemRepository
+     * @param Application                    $app
+     * @param Repository\LogChangeRepository $changeRepository
+     * @param Repository\LogSystemRepository $systemRepository
      */
     public function __construct(Application $app, Repository\LogChangeRepository $changeRepository, Repository\LogSystemRepository $systemRepository)
     {
@@ -90,26 +88,30 @@ class Manager
     public function getActivity($log, $page = 1, $amount = 10, $options = [])
     {
         if ($log == 'change') {
-            $rows = $this->changeRepository->getActivity($page, $amount, $options);
-            $rowcount = $this->changeRepository->getActivityCount($options);
+            $repo = $this->changeRepository;
         } elseif ($log == 'system') {
-            $rows = $this->systemRepository->getActivity($page, $amount, $options);
-            $rowcount = $this->systemRepository->getActivityCount($options);
+            $repo = $this->systemRepository;
         } else {
             throw new \UnexpectedValueException("Invalid log type requested: $log");
         }
 
-        // Set up the pager
-        $pager = [
-            'for'          => 'activity',
-            'count'        => $rowcount,
-            'totalpages'   => ceil($rowcount / $amount),
-            'current'      => $page,
-            'showing_from' => ($page - 1) * $amount + 1,
-            'showing_to'   => ($page - 1) * $amount + count($rows)
-        ];
+        try {
+            $rows = $repo->getActivity($page, $amount, $options);
+            $rowcount = $repo->getActivityCount($options);
+        } catch (TableNotFoundException $e) {
+            return null;
+        }
 
-        $this->app['storage']->setPager('activity', $pager);
+        // Set up the pager
+
+        /** @var \Bolt\Pager\PagerManager $manager */
+        $manager = $this->app['pager'];
+        $manager->createPager('activity')
+            ->setCount($rowcount)
+            ->setTotalpages(ceil($rowcount / $amount))
+            ->setCurrent($page)
+            ->setShowingFrom(($page - 1) * $amount + 1)
+            ->setShowingTo(($page - 1) * $amount + count($rows));
 
         return $rows;
     }
@@ -118,30 +120,30 @@ class Manager
      * Get the listing data such as title and count.
      *
      * @param array   $contenttype  The ContentType
-     * @param integer $contentid    The content ID
+     * @param integer $contentId    The content ID
      * @param array   $queryOptions
      *
      * @return array
      */
-    public function getListingData(array $contenttype, $contentid, array $queryOptions)
+    public function getListingData(array $contenttype, $contentId, array $queryOptions)
     {
-        // We have a content type, and possibly a contentid.
+        // We have a content type, and possibly a content ID.
         $content = null;
 
-        if ($contentid) {
-            $content = $this->app['storage']->getContent($contenttype['slug'], ['id' => $contentid, 'hydrate' => false]);
-            $queryOptions['contentid'] = $contentid;
+        if ($contentId) {
+            $content = $this->app['storage']->getContent($contenttype['slug'], ['id' => $contentId, 'hydrate' => false]);
+            $queryOptions['contentid'] = $contentId;
         }
 
         // Getting a slice of data and the total count
-        $logEntries = $this->changeRepository->getChangelogByContentType($contenttype['slug'], $queryOptions);
-        $itemcount = $this->changeRepository->countChangelogByContentType($contenttype['slug'], $queryOptions);
+        $logEntries = $this->changeRepository->getChangeLogByContentType($contenttype['slug'], $queryOptions);
+        $itemCount = $this->changeRepository->countChangeLogByContentType($contenttype['slug'], $queryOptions);
 
         // The page title we're sending to the template depends on a few things:
         // If no contentid is given, we'll use the plural form of the content
         // type; otherwise, we'll derive it from the changelog or content item
         // itself.
-        if ($contentid) {
+        if ($contentId) {
             if ($content) {
                 // content item is available: get the current title
                 $title = $content->getTitle();
@@ -150,7 +152,7 @@ class Manager
                 if (empty($logEntries)) {
                     // No item, no entries - phew. Content type name and ID
                     // will have to do.
-                    $title = $contenttype['singular_name'] . ' #' . $contentid;
+                    $title = $contenttype['singular_name'] . ' #' . $contentId;
                 } else {
                     // No item, but we can use the most recent title.
                     $title = $logEntries[0]['title'];
@@ -162,6 +164,6 @@ class Manager
             $title = $contenttype['name'];
         }
 
-        return ['content' => $content, 'title' => $title, 'entries' => $logEntries, 'count' => $itemcount];
+        return ['content' => $content, 'title' => $title, 'entries' => $logEntries, 'count' => $itemCount];
     }
 }

@@ -23,7 +23,8 @@ class CronRunner extends BaseCommand
         $this
             ->setName('cron')
             ->setDescription('Cron virtual daemon')
-            ->addOption('run', null, InputOption::VALUE_REQUIRED, "Run a particular interim's jobs:\n" . implode("\n", $interims));
+            ->addOption('run', null, InputOption::VALUE_REQUIRED, "Run a particular interim's jobs:\n" . implode("\n", $interims))
+        ;
     }
 
     /**
@@ -35,13 +36,13 @@ class CronRunner extends BaseCommand
             $event = $input->getOption('run');
             $param = [
                 'run'   => true,
-                'event' => $event
+                'event' => $event,
             ];
         } else {
             $event = false;
             $param = [
                 'run'   => false,
-                'event' => ''
+                'event' => '',
             ];
         }
 
@@ -52,7 +53,7 @@ class CronRunner extends BaseCommand
             } else {
                 $this->auditLog(__CLASS__, 'Cron run');
             }
-            $output->writeln("<info>Cron run!</info>");
+            $output->writeln('<info>Cron run!</info>');
         }
     }
 }

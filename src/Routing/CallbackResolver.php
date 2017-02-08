@@ -58,7 +58,7 @@ class CallbackResolver extends \Silex\CallbackResolver
         if (isset($this->classmap[$cls])) {
             return true; // Will use service definition
         }
-        if (!class_exists($cls)) {
+        if (!class_exists($cls) || !method_exists($cls, $method)) {
             return false; // Can't handle this
         }
         $refMethod = new \ReflectionMethod($cls, $method);
@@ -89,6 +89,7 @@ class CallbackResolver extends \Silex\CallbackResolver
             if (is_array($method)) {
                 $params = $method;
                 $callback = $this->resolveCallback($cls);
+
                 return function () use ($callback, $params) {
                     return call_user_func_array($callback, $params);
                 };
@@ -103,6 +104,7 @@ class CallbackResolver extends \Silex\CallbackResolver
 
         if (isset($this->classmap[$cls])) {
             $service = $this->classmap[$cls];
+
             return parent::convertCallback("$service:$method");
         }
 

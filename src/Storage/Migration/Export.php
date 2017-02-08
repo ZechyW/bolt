@@ -16,7 +16,7 @@ class Export extends AbstractMigration
     private $hash;
 
     /**
-     * Export set Contenttype's records to the export file.
+     * Export set ContentType's records to the export file.
      *
      * @return \Bolt\Storage\Migration\Export
      */
@@ -72,7 +72,7 @@ class Export extends AbstractMigration
     }
 
     /**
-     * Export a single Contenttype's records to the export file.
+     * Export a single ContentType's records to the export file.
      *
      * @param string  $contenttype
      * @param boolean $last        Flag that indicates last contenttype
@@ -89,8 +89,10 @@ class Export extends AbstractMigration
         // last record so we can close off if need be
         if ($last) {
             $last = false;
-            $end  = array_keys($records);
-            $end  = end($end);
+            $keys = array_keys($records);
+            $end  = end($keys);
+        } else {
+            $end = null;
         }
 
         foreach ($records as $key => $record) {
@@ -135,12 +137,12 @@ class Export extends AbstractMigration
         $contenttype = $this->app['storage']->getContentType($contenttypeslugs);
 
         if (empty($contenttype)) {
-            $this->setError(true)->setErrorMessage("The requested Contenttype '$contenttypeslugs' doesn't exist!");
+            $this->setError(true)->setErrorMessage("The requested ContentType '$contenttypeslugs' doesn't exist!");
         } elseif (!isset($this->contenttypes[$contenttypeslugs])) {
-            $this->contenttypes[$contenttypeslugs] = $contenttype;
+            $this->contenttypes[] = $contenttypeslugs;
         }
 
-        return this;
+        return $this;
     }
 
     /**

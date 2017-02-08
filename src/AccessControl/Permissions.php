@@ -2,7 +2,9 @@
 
 namespace Bolt\AccessControl;
 
-use Bolt\Content;
+use Bolt\Exception\AccessControlException;
+use Bolt\Legacy\Content;
+use Bolt\Storage\Entity;
 use Bolt\Translation\Translator as Trans;
 use Silex;
 
@@ -39,9 +41,18 @@ class Permissions
 
     /** @var \Silex\Application */
     private $app;
-
-    // per-request permission cache
+    /** @var array Per-request permission cache */
     private $rqcache;
+    /** @var array The list of ContentType permissions */
+    private $contentTypePermissions = [
+        'create'           => false,
+        'change-ownership' => false,
+        'delete'           => false,
+        'edit'             => false,
+        'publish'          => false,
+        'depublish'        => false,
+        'view'             => false,
+    ];
 
     public function __construct(Silex\Application $app)
     {
@@ -58,7 +69,7 @@ class Permissions
     {
         // Log the message if enabled
         if ($this->app['config']->get('general/debug_permission_audit_mode', false)) {
-            $this->app['logger.system']->addInfo($msg, ['event' => 'authentication']);
+            $this->app['logger.system']->info($msg, ['event' => 'authentication']);
         }
     }
 
@@ -75,8 +86,8 @@ class Permissions
         $roles = $this->app['config']->get('permissions/roles');
         $roles[self::ROLE_ROOT] = [
             'label'       => 'Root',
-            'description' => Trans::__('Built-in superuser role, automatically grants all permissions'),
-            'builtin'     => true
+            'description' => Trans::__('permissions.roles.description.root'),
+            'builtin'     => true,
         ];
 
         return $roles;
@@ -99,22 +110,22 @@ class Permissions
         switch ($roleName) {
             case self::ROLE_ANONYMOUS:
                 return [
-                    'label'       => Trans::__('Anonymous'),
-                    'description' => Trans::__('Built-in role, automatically granted at all times, even if no user is logged in'),
+                    'label'       => Trans::__('permissions.roles.label.anonymous'),
+                    'description' => Trans::__('permissions.roles.description.anonymous'),
                     'builtin'     => true,
                 ];
 
             case self::ROLE_EVERYONE:
                 return [
                     'label'       => Trans::__('Everybody'),
-                    'description' => Trans::__('Built-in role, automatically granted to every registered user'),
+                    'description' => Trans::__('permissions.roles.description.everyone'),
                     'builtin'     => true,
                 ];
 
             case self::ROLE_OWNER:
                 return [
-                    'label'       => Trans::__('Owner'),
-                    'description' => Trans::__('Built-in role, only valid in the context of a resource, and automatically assigned to the owner of that resource.'),
+                    'label'       => Trans::__('permissions.roles.label.owner'),
+                    'description' => Trans::__('permissions.roles.description.owner'),
                     'builtin'     => true,
                 ];
 
@@ -135,7 +146,7 @@ class Permissions
      * @param array   $user    An array as returned by Users::getUser()
      * @param Content $content An optional Content object to check ownership
      *
-     * @throws \Exception
+     * @throws AccessControlException
      *
      * @return array An associative array of roles for the given user
      */
@@ -143,7 +154,7 @@ class Permissions
     {
         $userRoleNames = $user['roles'];
         if (!is_array($userRoleNames)) {
-            throw new \Exception('Expected a user-like array, but the "roles" property is not an array');
+            throw new AccessControlException('Expected a user-like array, but the "roles" property is not an array');
         }
         $userRoleNames[] = self::ROLE_EVERYONE;
         if ($content && $content['user'] && $content['user']['id'] === $user['id']) {
@@ -207,7 +218,7 @@ class Permissions
      *                               roles, as these are not added at this point.
      * @param string $permissionName Which permission to check
      * @param string $type
-     * @param string $item
+     * @param mixed  $item
      *
      * @return bool TRUE if granted, FALSE if not.
      */
@@ -220,18 +231,18 @@ class Permissions
         }
 
         if (is_array($item) && isset($item['username'])) {
-            $itemStr = sprintf(' for user "%s"', $item['username']);
+            $itemStr = sprintf(' for user <tt>%s</tt>', $item['username']);
         } elseif ($item) {
-            $itemStr = " for $item";
+            $itemStr = " for <tt>$item</tt>";
         } else {
             $itemStr = '';
         }
 
         $roleNames = array_unique($roleNames);
-        if (in_array(Permissions::ROLE_ROOT, $roleNames)) {
+        if (in_array(self::ROLE_ROOT, $roleNames)) {
             $this->audit(
                 sprintf(
-                    'Granting "%s"%s to root user',
+                    'Granting <tt>%s</tt>%s to root user',
                     $permissionName,
                     $itemStr
                 )
@@ -243,7 +254,7 @@ class Permissions
             if ($this->checkRolePermission($roleName, $permissionName, $type ?: 'global', $item)) {
                 $this->audit(
                     sprintf(
-                        'Granting "%s"%s based on role %s',
+                        'Granting <tt>%s</tt>%s based on role <tt>%s</tt>',
                         $permissionName,
                         $itemStr,
                         $roleName
@@ -255,7 +266,7 @@ class Permissions
         }
         $this->audit(
             sprintf(
-                'Denying "%s"%s; available roles: %s',
+                'Denying <tt>%s</tt>%s; available roles: <tt>%s</tt>',
                 $permissionName,
                 $itemStr,
                 implode(', ', $roleNames)
@@ -301,7 +312,13 @@ class Permissions
     {
         $roles = $this->getRolesByGlobalPermission($permissionName);
         if (!is_array($roles)) {
-            $this->app['logger.system']->addInfo("Configuration error: $permissionName is not granted to any roles.", ['event' => 'authentication']);
+            // We log it, unless the permission name is 'root'.
+            if ($roleName !== self::ROLE_ROOT) {
+                $this->app['logger.system']->info(
+                    "Configuration error: Permission '$permissionName' is not granted to any roles. You should add a role for this permission to <tt>permissions.yml</tt>.",
+                    ['event' => 'authentication']
+                );
+            }
 
             return false;
         }
@@ -350,9 +367,42 @@ class Permissions
      */
     private function checkRoleContentTypePermission($roleName, $permissionName, $contenttype)
     {
+        // Actions on non-existing contenttypes are not allowed.
+        if (!$this->app['storage']->getContentType($contenttype)) {
+            return false;
+        }
+
         $roles = $this->getRolesByContentTypePermission($permissionName, $contenttype);
 
         return in_array($roleName, $roles);
+    }
+
+    /**
+     * Get the list of ContentType permissions available.
+     *
+     * @return boolean[]
+     */
+    public function getContentTypePermissions()
+    {
+        return $this->contentTypePermissions;
+    }
+
+    /**
+     * Return a list of ContentType permissions that a user has for the ContentType.
+     *
+     * @param string             $contentTypeSlug
+     * @param array|Entity\Users $user
+     *
+     * @return boolean[]
+     */
+    public function getContentTypeUserPermissions($contentTypeSlug, $user)
+    {
+        $permissions = [];
+        foreach (array_keys($this->contentTypePermissions) as $contentTypePermission) {
+            $permissions[$contentTypePermission] = $this->isAllowed($contentTypePermission, $user, $contentTypeSlug);
+        }
+
+        return $permissions;
     }
 
     /**
@@ -374,7 +424,7 @@ class Permissions
      */
     public function getGlobalRoles()
     {
-        return $this->app['config']->get("permissions/global");
+        return $this->app['config']->get('permissions/global');
     }
 
     /**
@@ -425,11 +475,11 @@ class Permissions
     {
         if (isset($user['roles']) && is_array($user['roles'])) {
             $userRoles = $user['roles'];
-            $userRoles[] = Permissions::ROLE_EVERYONE;
+            $userRoles[] = self::ROLE_EVERYONE;
         } else {
             $userRoles = [];
         }
-        $userRoles[] = Permissions::ROLE_ANONYMOUS;
+        $userRoles[] = self::ROLE_ANONYMOUS;
 
         return $userRoles;
     }
@@ -464,27 +514,37 @@ class Permissions
      *
      * "contenttype:$contenttype:edit or contenttype:$contenttype:view"
      *
-     * @param string  $what        The desired permission, as elaborated upon above.
-     * @param mixed   $user        The user to check permissions against.
-     * @param string  $contenttype Optional: Content type slug. If specified,
-     *                             $what is taken to be a relative permission (e.g. 'edit')
-     *                             rather than an absolute one (e.g. 'contenttype:pages:edit').
-     * @param integer $contentid   Only used if $contenttype is given, to further
-     *                             specifiy the content item.
+     * @param string               $what      The desired permission, as elaborated upon above.
+     * @param mixed                $user      The user to check permissions against.
+     * @param string|array|Content $content   Optional: Content object/array or ContentType slug.
+     *                                        If specified, $what is taken to be a relative permission (e.g. 'edit')
+     *                                        rather than an absolute one (e.g. 'contenttype:pages:edit').
+     * @param integer              $contentId Only used if $content is given, to further specifiy the content item.
      *
      * @return boolean TRUE if the permission is granted, FALSE if denied.
      */
-    public function isAllowed($what, $user, $contenttype = null, $contentid = null)
+    public function isAllowed($what, $user, $content = null, $contentId = null)
     {
-        // $contenttype must be a string, not an array.
-        if (is_array($contenttype)) {
-            $contenttype = $contenttype['slug'];
+        if (is_array($content)) {
+            $contenttypeSlug = $content['slug'];
+        } elseif ($content instanceof \Bolt\Legacy\Content) {
+            $contenttypeSlug = $content->contenttype['slug'];
+        } else {
+            $contenttypeSlug = $content;
         }
 
-        $this->audit("Checking permission query '$what' for user '{$user['username']}' with contenttype '$contenttype' and contentid '$contentid'");
+        $auditline = sprintf(
+            'Checking permission query <tt>%s</tt> for user <tt>%s</tt>',
+            $what,
+            !empty($user['username']) ? $user['username'] : '(none)'
+        );
+        if (!empty($contenttypeSlug)) {
+            $auditline .= sprintf('with contenttype <tt>%s</tt> and contentid <tt>%s</tt>', $contenttypeSlug, $contentId);
+        }
+        $this->audit($auditline);
 
         // First, let's see if we have the check in the per-request cache.
-        $rqCacheKey = $user['id'] . '//' . $what . '//' . $contenttype . '//' . $contentid;
+        $rqCacheKey = $user['id'] . '//' . $what . '//' . $contenttypeSlug . '//' . $contentId;
         if (isset($this->rqcache[$rqCacheKey])) {
             return $this->rqcache[$rqCacheKey];
         }
@@ -498,7 +558,7 @@ class Permissions
             $this->app['cache']->save($cacheKey, json_encode($rule));
         }
         $userRoles = $this->getEffectiveRolesForUser($user);
-        $isAllowed = $this->isAllowedRule($rule, $user, $userRoles, $contenttype, $contentid);
+        $isAllowed = $this->isAllowedRule($rule, $user, $userRoles, $content, $contenttypeSlug, $contentId);
 
         // Cache for the current request
         $this->rqcache[$rqCacheKey] = $isAllowed;
@@ -509,17 +569,18 @@ class Permissions
     /**
      * Check if a user is allowed a rule 'type'.
      *
-     * @param array   $rule
-     * @param array   $user
-     * @param array   $userRoles
-     * @param string  $contenttype
-     * @param integer $contentid
+     * @param array                $rule
+     * @param array                $user
+     * @param array                $userRoles
+     * @param string|array|Content $content
+     * @param string               $contenttypeSlug
+     * @param integer              $contentid
      *
-     * @throws \Exception
+     * @throws AccessControlException
      *
      * @return boolean
      */
-    private function isAllowedRule($rule, $user, $userRoles, $contenttype, $contentid)
+    private function isAllowedRule($rule, $user, $userRoles, $content, $contenttypeSlug, $contentid)
     {
         switch ($rule['type']) {
             case PermissionParser::P_TRUE:
@@ -527,10 +588,10 @@ class Permissions
             case PermissionParser::P_FALSE:
                 return false;
             case PermissionParser::P_SIMPLE:
-                return $this->isAllowedSingle($rule['value'], $user, $userRoles, $contenttype, $contentid);
+                return $this->isAllowedSingle($rule['value'], $user, $userRoles, $content, $contenttypeSlug, $contentid);
             case PermissionParser::P_OR:
                 foreach ($rule['value'] as $subrule) {
-                    if ($this->isAllowedRule($subrule, $user, $userRoles, $contenttype, $contentid)) {
+                    if ($this->isAllowedRule($subrule, $user, $userRoles, $content, $contenttypeSlug, $contentid)) {
                         return true;
                     }
                 }
@@ -538,36 +599,37 @@ class Permissions
                 return false;
             case PermissionParser::P_AND:
                 foreach ($rule['value'] as $subrule) {
-                    if (!$this->isAllowedRule($subrule, $user, $userRoles, $contenttype, $contentid)) {
+                    if (!$this->isAllowedRule($subrule, $user, $userRoles, $content, $contenttypeSlug, $contentid)) {
                         return false;
                     }
                 }
 
                 return true;
             default:
-                throw new \Exception("Invalid permission check rule of type " . $rule['type'] . ", expected P_SIMPLE, P_AND or P_OR");
+                throw new AccessControlException('Invalid permission check rule of type ' . $rule['type'] . ', expected P_SIMPLE, P_AND or P_OR');
         }
     }
 
     /**
      * Check if a user has a specific role.
      *
-     * @param string  $what
-     * @param array   $user
-     * @param array   $userRoles
-     * @param string  $contenttype
-     * @param integer $contentid
+     * @param string               $what
+     * @param array                $user
+     * @param array                $userRoles
+     * @param string|array|Content $content
+     * @param string               $contenttypeSlug
+     * @param integer              $contentId
      *
      * @return boolean
      */
-    private function isAllowedSingle($what, $user, $userRoles, $contenttype = null, $contentid = null)
+    private function isAllowedSingle($what, $user, $userRoles, $content = null, $contenttypeSlug = null, $contentId = null)
     {
-        if ($contenttype !== null) {
+        if ($content !== null) {
             $parts = [
                 'contenttype',
-                $contenttype,
+                $contenttypeSlug,
                 $what,
-                $contentid,
+                $contentId,
             ];
         } else {
             $parts = explode(':', $what);
@@ -580,7 +642,7 @@ class Permissions
                     $contenttype = $parts[1];
                 }
                 if (empty($contenttype)) {
-                    if (in_array(Permissions::ROLE_EVERYONE, $userRoles)) {
+                    if (in_array(self::ROLE_EVERYONE, $userRoles)) {
                         $this->audit("Granting 'overview' for everyone (hard-coded override)");
 
                         return true;
@@ -607,31 +669,30 @@ class Permissions
 
             case 'contenttype':
                 $contenttype = $parts[1];
-                $permission = $contentid = null;
+                $permission = $contentId = null;
                 if (isset($parts[2])) {
                     $permission = $parts[2];
                 }
                 if (isset($parts[3])) {
-                    $contentid = $parts[3];
+                    $contentId = $parts[3];
                 }
                 if (empty($permission)) {
                     $permission = 'view';
                 }
+
                 // Handle special case for owner.
-                // It's a bit unfortunate that we have to fetch the content
-                // item for this, but since we're in the back-end, we probably
-                // won't see a lot of traffic here, so it's probably
-                // forgivable.
-                if (!empty($contentid)) {
-                    // $contenttype must be a string, not an array.
-                    if (is_array($contenttype)) {
-                        $contenttype = $contenttype['slug'];
-                    }
-                    $content = $this->app['storage']->getContent("$contenttype/$contentid", ['hydrate' => false]);
-                    if (intval($content['ownerid']) &&
-                        (intval($content['ownerid']) === intval($user['id']))) {
-                        $userRoles[] = Permissions::ROLE_OWNER;
-                    }
+                if (empty($contentId)) {
+                    break;
+                }
+
+                // If content was not passed but our rule contains the content
+                // we need, lets fetch the Content object @see #3909
+                if (is_string($content) || ($contenttype && $contentId)) {
+                    $content = $this->app['storage']->getContent("$contenttype/$contentId", ['hydrate' => false]);
+                }
+
+                if (intval($content['ownerid']) && (intval($content['ownerid']) === intval($user['id']))) {
+                    $userRoles[] = self::ROLE_OWNER;
                 }
                 break;
 
@@ -666,7 +727,7 @@ class Permissions
      * @param string $fromStatus
      * @param string $toStatus
      *
-     * @throws \Exception
+     * @throws AccessControlException
      *
      * @return string|null The name of the required permission suffix (e.g.
      *                     'publish'), or NULL if no permission is required.
@@ -680,17 +741,15 @@ class Permissions
         switch ($toStatus) {
             case 'draft':
             case 'held':
-                if (empty($fromStatus)) {
-                    return null;
-                } else {
-                    return 'depublish';
-                }
-                break;
+                return empty($fromStatus) ? null : 'depublish';
+
             case 'timed':
+            case 'publish':
             case 'published':
                 return 'publish';
+
             default:
-                throw new \Exception("Invalid content status transition: $fromStatus -> $toStatus");
+                throw new AccessControlException("Invalid content status transition: '$fromStatus' -> '$toStatus'");
         }
     }
 

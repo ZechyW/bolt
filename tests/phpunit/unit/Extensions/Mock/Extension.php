@@ -1,21 +1,25 @@
 <?php
 namespace Bolt\Tests\Extensions\Mock;
 
-use Bolt\Application;
+use Bolt\Asset\Snippet\Snippet;
 use Bolt\Asset\Target;
-use Bolt\Extensions\ExtensionInterface;
-use Bolt\Extensions\Snippets\Location as SnippetLocation;
+use Bolt\BaseExtension;
+use Silex\Application;
 
 /**
  * Class to test correct operation and locations of composer configuration.
  *
  * @author Ross Riley <riley.ross@gmail.com>
  */
-class Extension implements ExtensionInterface
+class Extension extends BaseExtension
 {
     public function __construct(Application $app)
     {
-        $app['asset.queue.snippet']->add(Target::END_OF_HEAD, [$this, 'snippetCallBack']);
+        $snippet = (new Snippet())
+            ->setLocation(Target::END_OF_HEAD)
+            ->setCallback([$this, 'snippetCallBack'])
+        ;
+        $app['asset.queue.snippet']->add($snippet);
     }
 
     public function initialize()
@@ -38,10 +42,5 @@ class Extension implements ExtensionInterface
     public function getExtensionConfig()
     {
         return [];
-    }
-
-    public function getName()
-    {
-        return 'testext';
     }
 }

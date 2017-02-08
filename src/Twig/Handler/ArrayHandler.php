@@ -11,10 +11,10 @@ use Silex;
  */
 class ArrayHandler
 {
-    public $order_on;
-    public $order_ascending;
-    public $order_ascending_secondary;
-    public $order_on_secondary;
+    private $orderOn;
+    private $orderAscending;
+    private $orderAscendingSecondary;
+    private $orderOnSecondary;
 
     /** @var \Silex\Application */
     private $app;
@@ -28,38 +28,6 @@ class ArrayHandler
     }
 
     /**
-     * Returns the first item of an array.
-     *
-     * @param array $array
-     *
-     * @return mixed
-     */
-    public function first($array)
-    {
-        if (!is_array($array)) {
-            return false;
-        } else {
-            return reset($array);
-        }
-    }
-
-    /**
-     * Returns the last item of an array.
-     *
-     * @param array $array
-     *
-     * @return mixed
-     */
-    public function last($array)
-    {
-        if (!is_array($array)) {
-            return false;
-        } else {
-            return end($array);
-        }
-    }
-
-    /**
      * Sorts / orders items of an array.
      *
      * @param array  $array
@@ -70,15 +38,15 @@ class ArrayHandler
      */
     public function order($array, $on, $onSecondary = '')
     {
-        // Set the 'order_on' and 'order_ascending', taking into account things like '-datepublish'.
-        list($this->order_on, $this->order_ascending) = $this->app['storage']->getSortOrder($on);
+        // Set the 'orderOn' and 'orderAscending', taking into account things like '-datepublish'.
+        list($this->orderOn, $this->orderAscending) = $this->app['storage']->getSortOrder($on);
 
         // Set the secondary order, if any.
         if (!empty($onSecondary)) {
-            list($this->order_on_secondary, $this->order_ascending_secondary) = $this->app['storage']->getSortOrder($onSecondary);
+            list($this->orderOnSecondary, $this->orderAscendingSecondary) = $this->app['storage']->getSortOrder($onSecondary);
         } else {
-            $this->order_on_secondary = false;
-            $this->order_ascending_secondary = false;
+            $this->orderOnSecondary = false;
+            $this->orderAscendingSecondary = false;
         }
 
         uasort($array, [$this, 'orderHelper']);
@@ -87,36 +55,36 @@ class ArrayHandler
     }
 
     /**
-     * Helper function for sorting an array of \Bolt\Content.
+     * Helper function for sorting an array of \Bolt\Legacy\Content.
      *
-     * @param \Bolt\Content|array $a
-     * @param \Bolt\Content|array $b
+     * @param \Bolt\Legacy\Content|array $a
+     * @param \Bolt\Legacy\Content|array $b
      *
      * @return boolean
      */
     private function orderHelper($a, $b)
     {
-        $aVal = $a[$this->order_on];
-        $bVal = $b[$this->order_on];
+        $aVal = $a[$this->orderOn];
+        $bVal = $b[$this->orderOn];
 
         // Check the primary sorting criterium.
         if ($aVal < $bVal) {
-            return !$this->order_ascending;
+            return !$this->orderAscending;
         } elseif ($aVal > $bVal) {
-            return $this->order_ascending;
+            return $this->orderAscending;
         } else {
             // Primary criterium is the same. Use the secondary criterium, if it is set. Otherwise return 0.
-            if (empty($this->order_on_secondary)) {
+            if (empty($this->orderOnSecondary)) {
                 return 0;
             }
 
-            $aVal = $a[$this->order_on_secondary];
-            $bVal = $b[$this->order_on_secondary];
+            $aVal = $a[$this->orderOnSecondary];
+            $bVal = $b[$this->orderOnSecondary];
 
             if ($aVal < $bVal) {
-                return !$this->order_ascending_secondary;
+                return !$this->orderAscendingSecondary;
             } elseif ($aVal > $bVal) {
-                return $this->order_ascending_secondary;
+                return $this->orderAscendingSecondary;
             } else {
                 // both criteria are the same. Whatever!
                 return 0;
@@ -138,5 +106,25 @@ class ArrayHandler
         }
 
         return $array;
+    }
+
+    /**
+     * Takes two arrays and returns a compiled array of unique, sorted values
+     *
+     * @param $arr1
+     * @param $arr2
+     *
+     * @return array
+     */
+    public function unique($arr1, $arr2)
+    {
+        $merged = array_unique(array_merge($arr1, $arr2), SORT_REGULAR);
+        $compiled = [];
+
+        foreach ($merged as $val) {
+            $compiled[$val[0]] = $val;
+        }
+
+        return $compiled;
     }
 }

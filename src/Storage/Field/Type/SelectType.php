@@ -12,7 +12,7 @@ use Doctrine\DBAL\Types\Type;
 class SelectType extends FieldTypeBase
 {
     /**
-     * @inheritdoc
+     * {@inheritdoc}
      */
     public function getName()
     {
@@ -20,10 +20,10 @@ class SelectType extends FieldTypeBase
     }
 
     /**
-     * @inheritdoc
+     * {@inheritdoc}
      */
     public function getStorageType()
     {
-        return Type::getType('json_array');
+        return Type::getType('text');
     }
 }

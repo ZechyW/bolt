@@ -1,8 +1,7 @@
 <?php
 namespace Bolt\Tests\Storage;
 
-use Bolt\Storage;
-use Bolt\Storage\EntityManager;
+use Bolt\Legacy\Storage;
 use Bolt\Tests\BoltUnitTest;
 use Bolt\Tests\Mocks\LoripsumMock;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,45 +16,62 @@ class FieldSaveTest extends BoltUnitTest
     public function testRelationsSave()
     {
         $app = $this->getApp();
-        $app['schema']->repairTables();
+        $app['schema']->update();
         $this->addSomeContent();
         $em = $app['storage'];
         $repo = $em->getRepository('showcases');
 
         $record = $repo->find(1);
 
-        foreach ($record->entries as $entry) {
+        foreach ($record->relation['entries'] as $entry) {
             $this->assertNotEmpty($entry->id);
             $this->assertNotEmpty($entry->slug);
         }
 
-        $record->setEntries([]);
+        $newRels = $em->createCollection('Bolt\Storage\Entity\Relations');
+        $record->setRelation($newRels);
         $em->save($record);
 
         // Test that there are no relations now on a fresh search
         $record1 = $repo->find(1);
-        $this->assertEquals([], $record1->entries);
+        $this->assertEquals(0, count($record1->relation));
     }
 
     public function testTaxonomySave()
     {
         $app = $this->getApp();
-        $app['schema']->repairTables();
-        $this->addSomeContent();
         $em = $app['storage'];
         $repo = $em->getRepository('showcases');
 
         $record = $repo->find(1);
 
-        $this->assertTrue(is_array($record->categories));
-        $this->assertTrue(is_array($record->tags));
+        $this->assertInstanceOf('Bolt\Storage\Collection\Taxonomy', $record->taxonomy['categories']);
+        $this->assertInstanceOf('Bolt\Storage\Collection\Taxonomy', $record->taxonomy['tags']);
 
-        $record->setCategories([]);
-        $em->save($record);
+        $taxonomy = $em->createCollection('Bolt\Storage\Entity\Taxonomy');
+        $taxonomy->setFromPost(['categories' => []], $record);
+        $record->setTaxonomy($taxonomy);
+        $repo->save($record);
 
         // Test that there are no relations now on a fresh search
         $record1 = $repo->find(1);
-        $this->assertEquals([], $record1->categories);
+        $this->assertEquals(0, count($record1->taxonomy['categories']));
+    }
+    
+    public function testEntityCreateTaxonomySave()
+    {
+        $app = $this->getApp();
+        $em = $app['storage'];
+        $repo = $em->getRepository('showcases');
+        
+        $newEntity = $repo->create(['title' => 'Testing', 'slug' => 'testing', 'status' => 'published']);
+        $taxonomy = $em->createCollection('Bolt\Storage\Entity\Taxonomy');
+        $taxonomy->setFromPost(['categories' => ['news', 'events']], $newEntity);
+        $newEntity->setTaxonomy($taxonomy);
+        $repo->save($newEntity);
+        
+        $savedEntity = $repo->find($newEntity->getId());
+        $this->assertEquals(2, count($savedEntity->getCategories()));
     }
 
     protected function addSomeContent()
@@ -74,7 +90,7 @@ class FieldSaveTest extends BoltUnitTest
         $showcases = $storage->getContent('showcases');
         $randEntries = $storage->getContent('entries/random/2');
         foreach ($showcases as $show) {
-            foreach ($randEntries as $key => $entry) {
+            foreach (array_keys($randEntries) as $key) {
                 $show->setRelation('entries', $key);
                 $storage->saveContent($show);
             }

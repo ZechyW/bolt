@@ -2,8 +2,8 @@
 
 namespace Bolt\Translation;
 
-use Bolt\Application;
 use Bolt\Translation\Translator as Trans;
+use Silex\Application;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Translation\Exception\InvalidResourceException;
@@ -16,7 +16,7 @@ use Symfony\Component\Yaml\Yaml;
  */
 class TranslationFile
 {
-    /** @var \Bolt\Application */
+    /** @var \Silex\Application */
     private $app;
     /** @var string Requested Domain. */
     private $domain;
@@ -26,8 +26,6 @@ class TranslationFile
     private $relPath;
     /** @var array List of all translatable Strings found. */
     private $translatables = [];
-    /** @var string */
-    private $locale;
 
     /**
      * Constructor.
@@ -40,7 +38,6 @@ class TranslationFile
     {
         $this->app = $app;
         $this->domain = $domain;
-        $this->locale = $locale;
 
         // Build Path
         list($this->absPath, $this->relPath) = $this->buildPath($domain, $locale);
@@ -105,7 +102,7 @@ class TranslationFile
             ->ignoreVCS(true)
             ->name('*.twig')
             ->notName('*~')
-            ->exclude(['cache', 'config', 'database', 'resources', 'tests'])
+            ->exclude(['cache', 'config', 'database', 'resources', 'tests', 'bower_components', 'node_modules'])
             ->in(dirname($this->app['resources']->getPath('themepath')))
             ->in($this->app['resources']->getPath('apppath'));
 
@@ -295,13 +292,13 @@ class TranslationFile
             'TodoReal' => [' untranslated messages', []],
             'TodoKey'  => [' untranslated keyword based messages', []],
             'DoneReal' => [' translations', []],
-            'DoneKey'  => [' keyword based translations', []]
+            'DoneKey'  => [' keyword based translations', []],
         ];
         foreach ($newTranslations as $key => $translation) {
             $set = ['trans' => $translation];
-            if (preg_match('%^([a-z0-9-]+)\.([a-z0-9-]+)\.([a-z0-9-]+)(?:\.([a-z0-9.-]+))?$%', $key, $match)) {
+            if (preg_match('%^[a-z0-9-]+\.[a-z0-9-.]+$%', $key)) {
                 $type = 'Key';
-                $set['key'] = array_slice($match, 1);
+                $set['key'] = preg_split('%\.%', $key);
             } else {
                 $type = 'Real';
             }
@@ -327,6 +324,9 @@ class TranslationFile
             '#          in order to prevent merge conflicts.' . "\n\n";
         $content = '';
 
+        // Set this to true to get nested output.
+        $nested = false;
+
         foreach ($transByType as $type => $transData) {
             list($text, $translations) = $transData;
             // Header
@@ -341,26 +341,36 @@ class TranslationFile
             foreach ($translations as $key => $tdata) {
                 // Key
                 if ($type == 'DoneKey') {
-                    $differs = false;
-                    for ($level = 0, $end = count($tdata['key']) - 1; $level < $end; $level++) {
-                        if ($differs || $level >= count($lastKey) - 1 || $lastKey[$level] != $tdata['key'][$level]) {
-                            $differs = true;
-                            if ($level == 0) {
-                                $content .= $linebreak;
-                                $linebreak = "\n";
+                    if ($nested) {
+                        $differs = false;
+                        for ($level = 0, $end = count($tdata['key']) - 1; $level < $end; $level++) {
+                            if ($differs || $level >= count($lastKey) - 1 || $lastKey[$level] != $tdata['key'][$level]) {
+                                $differs = true;
+                                if ($level === 0) {
+                                    $content .= $linebreak;
+                                    $linebreak = "\n";
+                                }
+                                $content .= str_repeat($indent, $level) . $tdata['key'][$level] . ':' . "\n";
                             }
-                            $content .= str_repeat($indent, $level) . $tdata['key'][$level] . ':' . "\n";
                         }
+                        $lastKey = $tdata['key'];
+                        $content .= str_repeat($indent, $level) . $tdata['key'][$level] . ': ';
+                    } else {
+                        $key2 = $tdata['key'][0] . (isset($tdata['key'][1]) ? '.' . $tdata['key'][1] : '');
+                        if ($key2 !== $lastKey) {
+                            $content .= $linebreak;
+                            $linebreak = "\n";
+                            $lastKey = $key2;
+                        }
+                        $content .= $key . ': ';
                     }
-                    $lastKey = $tdata['key'];
-                    $content .= str_repeat($indent, $level) . $tdata['key'][$level] . ': ';
                 } else {
                     $content .= Escaper::escapeWithDoubleQuotes($key) . ': ';
                 }
                 // Value
                 if ($tdata['trans'] === '') {
                     $thint = Trans::__($key);
-                    if ($thint == $key) {
+                    if ($thint === $key) {
                         $thint = isset($hinting[$key]) ? $hinting[$key] : '';
                     }
                     $content .= '#' . ($thint ? ' ' . Escaper::escapeWithDoubleQuotes($thint) : '') . "\n";
@@ -407,7 +417,7 @@ class TranslationFile
 
                 return $flattened;
             } catch (ParseException $e) {
-                $this->app['logger.flash']->error('<strong>Unable to parse the YAML translations</strong><br>' . $e->getMessage());
+                $this->app['logger.flash']->danger('Unable to parse the YAML translations' . $e->getMessage());
                 // Todo: do something better than just returning an empty array
             }
         }
@@ -427,10 +437,11 @@ class TranslationFile
         // if the file doesn't exist yet, point to the fallback one
         if (!file_exists($path) || filesize($path) < 10) {
             // fallback
-            list($path) = $this->buildPath('infos', Application::DEFAULT_LOCALE);
+            $localeFallbacks = $this->app['locale_fallbacks'];
+            list($path) = $this->buildPath('infos', reset($localeFallbacks));
 
             if (!file_exists($path)) {
-                $this->app['logger.flash']->error('Locale infos yml file not found. Fallback also not found.');
+                $this->app['logger.flash']->danger('Locale infos yml file not found. Fallback also not found.');
 
                 // fallback failed
                 return null;
@@ -524,14 +535,14 @@ class TranslationFile
         // Have a file, but not writable
         } elseif (file_exists($this->absPath) && !is_writable($this->absPath)) {
             $msg = Trans::__(
-                "The file '%s' is not writable. You will have to use your own editor to make modifications to this file.",
+                'general.phrase.file-not-writable',
                 $msgRepl
             );
             $this->app['logger.flash']->warning($msg);
 
         // File is not readable: abort
         } elseif (file_exists($this->absPath) && !is_readable($this->absPath)) {
-            $msg = Trans::__("The translations file '%s' is not readable.", $msgRepl);
+            $msg = Trans::__('general.phrase.error-translation-file-not-readable', $msgRepl);
             $this->app->abort(Response::HTTP_NOT_FOUND, $msg);
 
         // File is writeable

@@ -1,8 +1,8 @@
 <?php
 namespace Bolt\Tests\Controller;
 
-use Bolt\Content;
 use Bolt\Controller\Zone;
+use Bolt\Legacy\Content;
 use Bolt\Response\BoltResponse;
 use Bolt\Storage;
 use Bolt\Tests\Mocks\LoripsumMock;
@@ -42,18 +42,30 @@ class FrontendTest extends ControllerUnitTest
     {
         $this->setRequest(Request::create('/'));
 
-        $response = $this->controller()->homepage();
+        $response = $this->controller()->homepage($this->getRequest());
 
         $this->assertTrue($response instanceof BoltResponse);
         $this->assertSame('index.twig', $response->getTemplateName());
     }
 
-    public function testConfiguredHomepageTemplate()
+    public function testConfiguredConfigHomepageTemplate()
     {
         $this->getService('config')->set('general/homepage_template', 'custom-home.twig');
         $this->setRequest(Request::create('/'));
 
-        $response = $this->controller()->homepage();
+        $response = $this->controller()->homepage($this->getRequest());
+
+        $this->assertTrue($response instanceof BoltResponse);
+        $this->assertSame('index.twig', $response->getTemplateName());
+    }
+
+    public function testConfiguredThemeHomepageTemplate()
+    {
+        $this->getService('filesystem')->put('theme://custom-home.twig', '');
+        $this->getService('config')->set('theme/homepage_template', 'custom-home.twig');
+        $this->setRequest(Request::create('/'));
+
+        $response = $this->controller()->homepage($this->getRequest());
 
         $this->assertTrue($response instanceof BoltResponse);
         $this->assertSame('custom-home.twig', $response->getTemplateName());
@@ -66,16 +78,17 @@ class FrontendTest extends ControllerUnitTest
 
         $storage = $this->getMock('Bolt\Storage', ['getContent'], [$app]);
         $content1 = new Content($app);
+        $content1->setValue('id', 42);
         $storage->expects($this->once())
             ->method('getContent')
             ->will($this->returnValue($content1));
         $this->setService('storage', $storage);
 
-        $response = $this->controller()->homepage();
+        $response = $this->controller()->homepage($this->getRequest());
         $globals = $response->getGlobalContext();
 
         $this->assertTrue($response instanceof BoltResponse);
-        $this->assertSame($content1, $globals['records']);
+        $this->assertSame([42 => $content1], $globals['records']);
     }
 
     public function testMultipleHomepages()
@@ -93,7 +106,7 @@ class FrontendTest extends ControllerUnitTest
             ));
         $this->setService('storage', $storage);
 
-        $globals = $this->controller()->homepage()->getGlobalContext();
+        $globals = $this->controller()->homepage($this->getRequest())->getGlobalContext();
 
         $this->assertSame($content1, $globals['records'][0]);
         $this->assertSame($content2, $globals['records'][1]);
@@ -121,7 +134,7 @@ class FrontendTest extends ControllerUnitTest
         $response = $this->controller()->record($this->getRequest(), 'pages', 'test');
 
         $this->assertTrue($response instanceof BoltResponse);
-        $this->assertSame('record.twig', $response->getTemplateName());
+        $this->assertSame('page.twig', $response->getTemplateName());
         $this->assertNotEmpty($response->getGlobalContext());
     }
 
@@ -131,12 +144,12 @@ class FrontendTest extends ControllerUnitTest
     public function testCanonicalUrlProvider()
     {
         return [
-            ['http://bolt.dev/', null, false],
-            ['http://bolt.dev/', null, true],
-            ['https://foo.dev/', 'https://foo.dev/', false],
-            ['https://foo.dev/', 'https://foo.dev/', true],
-            ['http://bar.dev/', 'http://bar.dev/', false],
-            ['http://bar.dev/', 'http://bar.dev/', true],
+            ['http://bolt.test/', null, false],
+            ['http://bolt.test/', null, true],
+            ['https://foo.test/', 'https://foo.test/', false],
+            ['https://foo.test/', 'https://foo.test/', true],
+            ['http://bar.test/', 'http://bar.test/', false],
+            ['http://bar.test/', 'http://bar.test/', true],
         ];
     }
 
@@ -196,7 +209,7 @@ class FrontendTest extends ControllerUnitTest
         $response = $this->controller()->record($this->getRequest(), 'pages', 5);
 
         $this->assertTrue($response instanceof BoltResponse);
-        $this->assertSame('record.twig', $response->getTemplateName());
+        $this->assertSame('page.twig', $response->getTemplateName());
         $this->assertNotEmpty($response->getGlobalContext());
     }
 
@@ -357,24 +370,13 @@ class FrontendTest extends ControllerUnitTest
         $this->assertNotEmpty($response->getGlobalContext());
     }
 
+    /**
+     * @expectedException \Twig_Error_Loader
+     * @expectedExceptionMessage Template "nonexistent.twig" is not defined.
+     */
     public function testFailingTemplateRender()
     {
-        $this->setRequest(Request::create('/example'));
-
-        // Test that the failure gets logged too.
-//         $logger = $this->getMock('Bolt\DataCollector\TwigDataCollector', ['setTrackedValue'], [$this->getApp()]);
-//         $logger->expects($this->once())
-//             ->method('setTrackedValue')
-//             ->with('templateerror');
-//         $this->setService('twig.logger', $logger);
-
-//         $this->setExpectedException('Symfony\Component\HttpKernel\Exception\HttpException', 'failed');
-
-        $response = $this->controller()->template('nonexistent');
-
-        $this->assertTrue($response instanceof BoltResponse);
-        $this->assertSame('nonexistent.twig', $response->getTemplateName());
-        $this->assertNotEmpty($response->getGlobalContext());
+        $this->controller()->template('nonexistent');
     }
 
     public function testSearchListing()
@@ -384,7 +386,7 @@ class FrontendTest extends ControllerUnitTest
         $response = $this->controller()->search($this->getRequest());
 
         $this->assertTrue($response instanceof BoltResponse);
-        $this->assertSame('listing.twig', $response->getTemplateName());
+        $this->assertSame('search.twig', $response->getTemplateName());
         $this->assertNotEmpty($response->getGlobalContext());
     }
 
@@ -394,13 +396,13 @@ class FrontendTest extends ControllerUnitTest
             'search'          => 'Lorem',
             'pages_title'     => 1,
             'showcases_title' => 1,
-            'pages_body'      => 1
+            'pages_body'      => 1,
         ]));
 
         $response = $this->controller()->search($this->getRequest());
 
         $this->assertTrue($response instanceof BoltResponse);
-        $this->assertSame('listing.twig', $response->getTemplateName());
+        $this->assertSame('search.twig', $response->getTemplateName());
         $this->assertNotEmpty($response->getGlobalContext());
     }
 
@@ -418,7 +420,7 @@ class FrontendTest extends ControllerUnitTest
         $response = $this->controller()->before($this->getRequest());
 
         $this->assertInstanceOf('Symfony\Component\HttpFoundation\RedirectResponse', $response);
-        $this->assertEquals('/bolt/users/edit/', $response->getTargetUrl());
+        $this->assertEquals('/bolt/userfirst', $response->getTargetUrl());
     }
 
     public function testBeforeHandlerForMaintenanceMode()

@@ -17,7 +17,8 @@ class Extensions extends BaseCommand
     {
         $this
             ->setName('extensions')
-            ->setDescription('Lists all installed extensions');
+            ->setDescription('Lists all installed extensions')
+        ;
     }
 
     /**
@@ -29,6 +30,7 @@ class Extensions extends BaseCommand
             foreach ($this->app['extend.manager']->getMessages() as $message) {
                 $output->writeln(sprintf('<error>%s</error>', $message));
             }
+
             return;
         }
 

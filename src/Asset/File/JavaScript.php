@@ -8,13 +8,14 @@ namespace Bolt\Asset\File;
  */
 class JavaScript extends FileAssetBase
 {
+    /** @var string */
+    protected $type = 'javascript';
+
     /**
      * {@inheritdoc}
      */
     public function __toString()
     {
-        $hash = $this->cacheHash ? '?v=' . $this->cacheHash : $this->cacheHash;
-
-        return sprintf('<script src="%s%s" %s></script>', $this->fileName, $hash, $this->attributes);
+        return sprintf('<script src="%s" %s></script>', $this->url, $this->getAttributes());
     }
 }

@@ -1,5 +1,3 @@
-/* global module */
-
 /*
  * UGLIFY: Minify files with UglifyJS
  */
@@ -9,7 +7,7 @@ module.exports = {
      */
     prepareLibJs: {
         options: {
-            preserveComments: 'some',
+            preserveComments: /(?:^!|@(?:license|preserve|cc_on))/,
             sourceMap: '<%= sourcemap.js %>',
             sourceMapIncludeSources: true
         },
@@ -21,19 +19,20 @@ module.exports = {
             nonull: true,
             src: [
                 '<%= path.src.lib %>/bootstrap-file-input/bootstrap-file-input.js',
-                '<%= path.src.bower %>/blueimp-file-upload/js/jquery.fileupload.js',
-                '<%= path.src.bower %>/blueimp-file-upload/js/jquery.iframe-transport.js',
+                '<%= path.src.npm %>/blueimp-file-upload/js/jquery.fileupload.js',
+                '<%= path.src.npm %>/blueimp-file-upload/js/jquery.fileupload-process.js',
+                '<%= path.src.npm %>/blueimp-file-upload/js/jquery.fileupload-validate.js',
+                '<%= path.src.npm %>/blueimp-file-upload/js/jquery.iframe-transport.js',
                 '<%= path.src.lib %>/jquery-hotkeys/jquery-hotkeys.js',
                 '<%= path.tmp %>/modernizr-custom.js',
-                '<%= path.src.bower %>/jquery/dist/jquery.js',
-                '<%= path.src.bower %>/jquery.cookie/jquery.cookie.js',
-                '<%= path.src.bower %>/jquery.formatDateTime/jquery.formatDateTime.js',
-                '<%= path.src.bower %>/jquery.tagcloud.js/jquery.tagcloud.js',
-                '<%= path.src.bower %>/bootbox/bootbox.js',
-                '<%= path.src.bower %>/magnific-popup/dist/jquery.magnific-popup.js',
-                '<%= path.src.bower %>/underscore/underscore.js',
-                '<%= path.src.bower %>/backbone/backbone.js',
-                '<%= path.src.bower %>/moment/moment.js'
+                '<%= path.src.npm %>/jquery/dist/jquery.js',
+                '<%= path.src.npm %>/jquery.cookie/jquery.cookie.js',
+                '<%= path.src.npm %>/jquery-formatdatetime/jquery.formatDateTime.js',
+                '<%= path.src.npm %>/jquery.tagcloud.js/jquery.tagcloud.js',
+                '<%= path.src.npm %>/bootbox/bootbox.js',
+                '<%= path.src.npm %>/magnific-popup/dist/jquery.magnific-popup.js',
+                '<%= path.src.npm %>/moment/moment.js',
+                '<%= path.src.lib %>/select2-ext/select2.sortable.js'
             ],
             dest: '<%= path.tmp %>'
         }]
@@ -44,7 +43,7 @@ module.exports = {
      */
     installCodeMirror: {
         options: {
-            preserveComments: 'some'
+            preserveComments: /(?:^!|@(?:license|preserve|cc_on))/
         },
         files: [{
             expand: true,
@@ -70,16 +69,39 @@ module.exports = {
      */
     installLocaleDatepicker: {
         options: {
-            preserveComments: 'some'
+            preserveComments: /(?:^!|@(?:license|preserve|cc_on))/
         },
         files: [{
             expand: true,
             ext: '.min.js',
-            cwd: '<%= path.src.bower %>/jquery-ui/ui/i18n',
+            cwd: '<%= path.src.npm %>/jquery-ui/ui/i18n',
             src: '*.js',
             dest: '<%= path.dest.js %>/locale/datepicker',
             rename: function (destBase, destPath) {
+                'use strict';
+
                 return destBase + '/' + destPath.replace('datepicker-', '').replace('-', '_');
+            }
+        }]
+    },
+
+    /*
+     * TARGET:  Copies min. select2 locale
+     */
+    installLocaleSelect2: {
+        options: {
+            preserveComments: /(?:^!|@(?:license|preserve|cc_on))/
+        },
+        files: [{
+            expand: true,
+            ext: '.min.js',
+            cwd: '<%= path.src.npm %>/select2/dist/js/i18n',
+            src: '*.js',
+            dest: '<%= path.dest.js %>/locale/select2',
+            rename: function (destBase, destPath) {
+                'use strict';
+
+                return destBase + '/' + destPath.replace('-', '_');
             }
         }]
     },
@@ -89,15 +111,17 @@ module.exports = {
      */
     installLocaleMoment: {
         options: {
-            preserveComments: 'some'
+            preserveComments: /(?:^!|@(?:license|preserve|cc_on))/
         },
         files: [{
             expand: true,
             ext: '.min.js',
-            cwd: '<%= path.src.bower %>/moment/locale',
+            cwd: '<%= path.src.npm %>/moment/locale',
             src: '*.js',
             dest: '<%= path.dest.js %>/locale/moment',
             rename: function (destBase, destPath) {
+                'use strict';
+
                 return destBase + '/' + destPath.replace(/([a-z]+)-([a-z]+)/, function (_, a, b) {
                     return a + '_' + b.toUpperCase();
                 });
@@ -115,14 +139,14 @@ module.exports = {
         },
         files: {
             '<%= path.tmp %>/bootstrap.min.js': [
-                '<%= path.src.bower %>/bootstrap-sass/assets/javascripts/bootstrap/alert.js',
-                '<%= path.src.bower %>/bootstrap-sass/assets/javascripts/bootstrap/button.js',
-                '<%= path.src.bower %>/bootstrap-sass/assets/javascripts/bootstrap/dropdown.js',
-                '<%= path.src.bower %>/bootstrap-sass/assets/javascripts/bootstrap/tab.js',
-                '<%= path.src.bower %>/bootstrap-sass/assets/javascripts/bootstrap/transition.js',
-                '<%= path.src.bower %>/bootstrap-sass/assets/javascripts/bootstrap/modal.js',
-                '<%= path.src.bower %>/bootstrap-sass/assets/javascripts/bootstrap/tooltip.js',
-                '<%= path.src.bower %>/bootstrap-sass/assets/javascripts/bootstrap/popover.js'
+                '<%= path.src.npm %>/bootstrap-sass/assets/javascripts/bootstrap/alert.js',
+                '<%= path.src.npm %>/bootstrap-sass/assets/javascripts/bootstrap/button.js',
+                '<%= path.src.npm %>/bootstrap-sass/assets/javascripts/bootstrap/dropdown.js',
+                '<%= path.src.npm %>/bootstrap-sass/assets/javascripts/bootstrap/tab.js',
+                '<%= path.src.npm %>/bootstrap-sass/assets/javascripts/bootstrap/transition.js',
+                '<%= path.src.npm %>/bootstrap-sass/assets/javascripts/bootstrap/modal.js',
+                '<%= path.src.npm %>/bootstrap-sass/assets/javascripts/bootstrap/tooltip.js',
+                '<%= path.src.npm %>/bootstrap-sass/assets/javascripts/bootstrap/popover.js'
             ]
         }
     },
@@ -136,8 +160,10 @@ module.exports = {
             sourceMap: '<%= sourcemap.js %>',
             sourceMapName: '<%= path.sourcemaps %>/bolt.js.map'
         },
-        files: {
-            '<%= path.dest.js %>/bolt.js': '<%= files.boltJs %>'
-        }
+        files: [{
+            nonull: true,
+            dest: '<%= path.dest.js %>/bolt.js',
+            src: '<%= files.boltJs %>'
+        }]
     }
 };

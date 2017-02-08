@@ -2,6 +2,7 @@
 
 namespace Bolt\Controller\Backend;
 
+use Silex\Application;
 use Silex\ControllerCollection;
 use Sirius\Upload\Result\Collection;
 use Sirius\Upload\Result\File;
@@ -18,12 +19,25 @@ class Upload extends BackendBase
 {
     protected function addRoutes(ControllerCollection $c)
     {
-        $c->match('/{namespace}', 'uploadNamspace')
+        $c->match('/{namespace}', 'uploadNamespace')
             ->before([$this, 'before'])
             ->value('namespace', 'files')
-            ->bind('upload');
+            ->bind('upload')
+        ;
 
         return $c;
+    }
+
+    /**
+     * @param Request     $request
+     * @param Application $app
+     * @param null        $roleRoute
+     *
+     * @return null|\Symfony\Component\HttpFoundation\RedirectResponse
+     */
+    public function before(Request $request, Application $app, $roleRoute = null)
+    {
+        return parent::before($request, $app, 'files:uploads');
     }
 
     /**
@@ -34,12 +48,12 @@ class Upload extends BackendBase
      *
      * @return \Symfony\Component\HttpFoundation\JsonResponse
      */
-    public function uploadNamspace(Request $request, $namespace)
+    public function uploadNamespace(Request $request, $namespace)
     {
         if ($handler = $request->get('handler')) {
             // Use custom handlers
             if (is_array($handler)) {
-                return $this->processCutomUploadHandler($request, $handler);
+                return $this->processCustomUploadHandler($request, $handler);
             } else {
                 list($namespace, $prefix) = $this->parser($handler);
                 $this->app['upload.namespace'] = $namespace;
@@ -104,7 +118,7 @@ class Upload extends BackendBase
                 foreach ($result as $resultFile) {
                     $successfulFiles[] = [
                         'url'  => $namespace . '/' . $resultFile->name,
-                        'name' => $resultFile->name
+                        'name' => $resultFile->name,
                     ];
                 }
             }
@@ -125,7 +139,7 @@ class Upload extends BackendBase
                 $errorFiles[] = [
                     'url'   => $namespace . '/' . $resultFile->original_name,
                     'name'  => $resultFile->original_name,
-                    'error' => (string) $errors[0]
+                    'error' => (string) $errors[0],
                 ];
             }
 
@@ -158,7 +172,7 @@ class Upload extends BackendBase
             if ($file instanceof UploadedFile) {
                 $filesToProcess[] = [
                     'name'     => $file->getClientOriginalName(),
-                    'tmp_name' => $file->getPathName()
+                    'tmp_name' => $file->getPathName(),
                 ];
             } else {
                 $filesToProcess[] = $file;
@@ -178,20 +192,20 @@ class Upload extends BackendBase
      *
      * @return \Symfony\Component\HttpFoundation\JsonResponse
      */
-    private function processCutomUploadHandler(Request $request, array $handler)
+    private function processCustomUploadHandler(Request $request, array $handler)
     {
         list($namespace, $prefix) = $this->parser($handler[0]);
         $this->app['upload.namespace'] = $namespace;
         $this->app['upload.prefix'] = $prefix;
 
         // Do the upload
-        $result = $this->handleUploadFiles($request, $namespace);
+        $fullResult = $this->handleUploadFiles($request, $namespace);
 
         array_shift($handler);
         $original = $namespace;
 
-        if (count($result)) {
-            $result = $result[0];
+        if (count($fullResult)) {
+            $result = $fullResult[0];
             foreach ($handler as $copy) {
                 list($namespace, $prefix) = $this->parser($copy);
 
@@ -202,6 +216,6 @@ class Upload extends BackendBase
             }
         }
 
-        return $this->json($result, Response::HTTP_OK, ['Content-Type' => 'text/plain']);
+        return $this->json($fullResult, Response::HTTP_OK, ['Content-Type' => 'text/plain']);
     }
 }

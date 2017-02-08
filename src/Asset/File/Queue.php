@@ -1,9 +1,14 @@
 <?php
 namespace Bolt\Asset\File;
 
+use Bolt\Asset\AssetSortTrait;
+use Bolt\Asset\Injector;
 use Bolt\Asset\QueueInterface;
 use Bolt\Asset\Target;
-use Silex\Application;
+use Bolt\Controller\Zone;
+use Symfony\Component\Asset\Packages;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * File asset queue processor.
@@ -13,42 +18,48 @@ use Silex\Application;
  */
 class Queue implements QueueInterface
 {
-    /** @var \Silex\Application */
-    private $app;
-    /** @var FileAssetBase[] */
+    use AssetSortTrait;
+
+    /** @var \Bolt\Asset\Injector */
+    protected $injector;
+    /** @var Packages */
+    protected $packages;
+
+    /** @var FileAssetInterface[] */
     private $stylesheet = [];
-    /** @var FileAssetBase[] */
+    /** @var FileAssetInterface[] */
     private $javascript = [];
 
     /**
      * Constructor.
      *
-     * @param Application $app
+     * @param Injector $injector
+     * @param Packages $packages
      */
-    public function __construct(Application $app)
+    public function __construct(Injector $injector, Packages $packages)
     {
-        $this->app = $app;
+        $this->injector = $injector;
+        $this->packages = $packages;
     }
 
     /**
      * Add a file asset to the queue.
      *
-     * @param string $type
-     * @param string $fileName
-     * @param array  $options
+     * @param FileAssetInterface $asset
      *
      * @throws \InvalidArgumentException
      */
-    public function add($type, $fileName, array $options = [])
+    public function add(FileAssetInterface $asset)
     {
-        $cacheHash = $this->app['asset.file.hash']($fileName);
+        $url = $this->packages->getUrl($asset->getPath(), $asset->getPackageName());
+        $asset->setUrl($url);
 
-        if ($type === 'javascript') {
-            $this->javascript[$cacheHash] = new JavaScript($fileName, $cacheHash, $options);
-        } elseif ($type === 'stylesheet') {
-            $this->stylesheet[$cacheHash] = new Stylesheet($fileName, $cacheHash, $options);
+        if ($asset->getType() === 'javascript') {
+            $this->javascript[$url] = $asset;
+        } elseif ($asset->getType() === 'stylesheet') {
+            $this->stylesheet[$url] = $asset;
         } else {
-            throw new \InvalidArgumentException("Requested asset type of '$type' is not valid.");
+            throw new \InvalidArgumentException(sprintf('Requested asset type %s is not valid.', $asset->getType()));
         }
     }
 
@@ -57,19 +68,19 @@ class Queue implements QueueInterface
      *
      * Uses sorting by priority.
      */
-    public function process($html)
+    public function process(Request $request, Response $response)
     {
+        /** @var FileAssetInterface $asset */
         foreach ($this->sort($this->javascript) as $key => $asset) {
-            $html = $this->processJsAssets($asset, $html);
+            $this->processAsset($asset, $request, $response);
             unset($this->javascript[$key]);
         }
 
+        /** @var FileAssetInterface $asset */
         foreach ($this->sort($this->stylesheet) as $key => $asset) {
-            $html = $this->processCssAssets($asset, $html);
+            $this->processAsset($asset, $request, $response);
             unset($this->stylesheet[$key]);
         }
-
-        return $html;
     }
 
     /**
@@ -93,60 +104,28 @@ class Queue implements QueueInterface
     }
 
     /**
-     * Process the CSS asset queue.
+     * Process a single asset.
      *
-     * @param FileAssetBase $asset
-     * @param string        $html
-     *
-     * @return string
+     * @param FileAssetInterface $asset
+     * @param Request            $request
+     * @param Response           $response
      */
-    protected function processCssAssets(FileAssetBase $asset, $html)
+    protected function processAsset(FileAssetInterface $asset, Request $request, Response $response)
     {
-        if ($asset->isLate()) {
-            return $this->app['asset.injector']->inject($asset, Target::END_OF_BODY, $html);
+        if ($asset->getZone() !== Zone::get($request)) {
+            return;
+        } elseif ($asset->isLate()) {
+            if ($asset->getLocation() === null) {
+                $location = Target::END_OF_BODY;
+            } else {
+                $location = $asset->getLocation();
+            }
+        } elseif ($asset->getLocation() !== null) {
+            $location = $asset->getLocation();
         } else {
-            return $this->app['asset.injector']->inject($asset, Target::BEFORE_CSS, $html);
+            $location = Target::END_OF_HEAD;
         }
-    }
 
-    /**
-     * Process the JavaScript asset queue.
-     *
-     * @param FileAssetBase $asset
-     * @param string        $html
-     *
-     * @return string
-     */
-    protected function processJsAssets(FileAssetBase $asset, $html)
-    {
-        if ($asset->isLate()) {
-            return $this->app['asset.injector']->inject($asset, Target::END_OF_BODY, $html);
-        } else {
-            return $this->app['asset.injector']->inject($asset, Target::AFTER_JS, $html);
-        }
-    }
-
-    /**
-     * Do a Schwartzian Transform for stable sort
-     *
-     * @see http://en.wikipedia.org/wiki/Schwartzian_transform
-     *
-     * @param FileAssetBase[] $files
-     *
-     * @return FileAssetBase[]
-     */
-    private function sort(array $files)
-    {
-        array_walk($files, function (&$v, $k) {
-            $v = [$v->getPriority(), $k, $v];
-        });
-
-        sort($files);
-
-        array_walk($files, function (&$v) {
-            $v = $v[2];
-        });
-
-        return $files;
+        $this->injector->inject($asset, $location, $response);
     }
 }

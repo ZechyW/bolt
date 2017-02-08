@@ -1,5 +1,3 @@
-/* global module */
-
 /*
  * WATCH: Run predefined tasks whenever watched file patterns are added, changed or deleted
  */
@@ -28,7 +26,7 @@ module.exports = {
     boltJs: {
         files: '<%= path.src.js %>/**/*.js',
         tasks: [
-            'jshint:boltJs',
+            'eslint:boltJs',
             'uglify:boltJs'
         ]
     },
@@ -45,6 +43,9 @@ module.exports = {
         ],
         options: {
             reload: true
-        }
+        },
+        tasks: [
+            'eslint:grunt'
+        ]
     }
 };

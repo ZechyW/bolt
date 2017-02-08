@@ -2,7 +2,6 @@
 
 namespace Bolt\Translation;
 
-use Bolt\Application;
 use Bolt\Configuration\ResourceManager;
 use Symfony\Component\Translation\Exception\InvalidResourceException;
 
@@ -75,7 +74,7 @@ class Translator
             return ($trans === $key && $default !== null) ? $default : $trans;
         } catch (InvalidResourceException $e) {
             if (!isset($app['translationyamlerror']) && $app['request']->isXmlHttpRequest() === false) {
-                $app['logger.flash']->warning('<strong>Error: You should fix this now, before continuing!</strong><br>' . $e->getMessage());
+                $app['logger.flash']->danger('Error: You should fix this now, before continuing!<br>' . $e->getMessage());
                 $app['translationyamlerror'] = true;
             }
 
@@ -135,7 +134,9 @@ class Translator
 
         // Try to get a real translation from contenttypes.xx_XX.yml
         $trans = self::trans($key, $encParams, 'contenttypes', $locale, false);
-        $transFallback = self::trans($key, $encParams, 'contenttypes', Application::DEFAULT_LOCALE, false);
+        $app = ResourceManager::getApp();
+        $localeFallbacks = $app['locale_fallbacks'];
+        $transFallback = self::trans($key, $encParams, 'contenttypes', reset($localeFallbacks), false);
 
         // We don't want fallback translation here
         if ($trans === $transFallback) {

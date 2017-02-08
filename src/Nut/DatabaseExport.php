@@ -6,6 +6,7 @@ use Bolt\Storage\Migration\Export;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Question\ConfirmationQuestion;
 
 /**
  * Nut database exporter command
@@ -21,7 +22,8 @@ class DatabaseExport extends BaseCommand
             ->setDescription('[EXPERIMENTAL] Export the database records to a YAML or JSON file.')
             ->addOption('no-interaction', 'n', InputOption::VALUE_NONE, 'Do not ask for confirmation')
             ->addOption('contenttypes',   'c', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'One or more contenttypes to export records for.')
-            ->addOption('file',           'f', InputOption::VALUE_REQUIRED, 'A YAML or JSON file to use for export data. Must end with .yml, .yaml or .json');
+            ->addOption('file',           'f', InputOption::VALUE_REQUIRED, 'A YAML or JSON file to use for export data. Must end with .yml, .yaml or .json')
+        ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
@@ -76,12 +78,12 @@ class DatabaseExport extends BaseCommand
      */
     private function checkContinue(InputInterface $input, OutputInterface $output)
     {
-        /** @var \Symfony\Component\Console\Helper\DialogHelper $dialog */
-        $dialog   = $this->getHelperSet()->get('dialog');
+        /** @var \Symfony\Component\Console\Helper\QuestionHelper $helper */
+        $helper = $this->getHelper('question');
         $confirm  = $input->getOption('no-interaction');
-        $question = '<question>Are you sure you want to continue with the export?</question> ';
+        $question = new ConfirmationQuestion('<question>Are you sure you want to continue with the export?</question> ');
 
-        if (!$confirm && !$dialog->askConfirmation($output, $question, false)) {
+        if (!$confirm && !$helper->ask($input, $output, $question)) {
             return false;
         }
 

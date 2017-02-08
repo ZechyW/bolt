@@ -12,6 +12,8 @@
  * @param {Object} $ - jQuery.
  */
 (function (bolt, $) {
+    'use strict';
+
     /*
      * Bolt.actions mixin container.
      */
@@ -32,9 +34,10 @@
             // Bind the click events, with the 'action' namespace.
             .on('click.action', function (e) {
                 var action = $(this).attr('data-action');
+
                 if (typeof action !== 'undefined' && action !== '') {
                     e.preventDefault();
-                    eval(action); // jshint ignore:line
+                    eval(action); // eslint-disable-line no-eval
                     e.stopPropagation();
                 }
             })
@@ -42,6 +45,33 @@
             .on('click.popover', '.popover', function (e) {
                 e.stopPropagation();
             });
+
+        // Add 'spinners' for buttons that should be clicked only once.
+        $('.clickspinner').on('click.spinner', function () {
+            $(this).addClass('disabled').blur();
+            $(this).find('i').addClass('fa-spin fa-spinner');
+
+            // Timeout of 10 seconds. The action really should have finished by now. Otherwise,
+            // just let the user try again.
+            window.setTimeout(function (self){
+                $(self).removeClass('disabled');
+                $(self).find('i').removeClass('fa-spin fa-spinner');
+            }, 10000, this);
+        });
+
+        // Add 'spinners' for forms that should be submitted only once.
+        $('.submitspinner').on('submit.spinner', function () {
+            $(this).find('button[type=submit]').addClass('disabled').blur();
+            $(this).find('button[type=submit] i').addClass('fa-spin fa-spinner');
+
+            // Timeout of 10 seconds. The action really should have finished by now. Otherwise,
+            // just let the user try again.
+            window.setTimeout(function (self){
+                $(self).removeClass('disabled');
+                $(self).find('i').removeClass('fa-spin fa-spinner');
+            }, 10000, $(this).find('button[type=submit]'));
+        });
+
     };
 
     // Apply mixin container

@@ -27,12 +27,11 @@ class Generator
         $hostName = $cookieOptions['browseragent'] ? $userAgent : '';
         $userAgent = $cookieOptions['httphost'] ? $hostName : '';
 
-        $this->token = md5($username.$salt.$remoteIP.$hostName.$userAgent);
+        $this->token = md5($username . $salt . $remoteIP . $hostName . $userAgent);
     }
 
     public function __toString()
     {
-
         return $this->token;
     }
 }

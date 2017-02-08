@@ -1,7 +1,7 @@
 {# Relationships for this record #}
 
 {% for relcontenttype, relation in context.contenttype.relations %}
-    <div data-fieldtype="relationship">
+    <div data-bolt-fieldset="relationship">
 
         {# Prefix #}
         {% if relation.prefix is defined and relation.prefix is not empty %}
@@ -11,7 +11,7 @@
         {% endif %}
 
         {# Relationship #}
-        {% include 'editcontent/fields/_relationship.twig' %}
+        {{ include('@bolt/editcontent/fields/_relationship.twig') }}
 
         {# Postfix #}
         {% if relation.postfix is defined and relation.postfix is not empty %}

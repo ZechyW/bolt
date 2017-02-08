@@ -1,9 +1,9 @@
 <?php
 namespace Bolt\Tests\Storage;
 
-use Bolt\Content;
 use Bolt\Events\StorageEvents;
-use Bolt\Storage;
+use Bolt\Legacy\Content;
+use Bolt\Legacy\Storage;
 use Bolt\Tests\BoltUnitTest;
 use Bolt\Tests\Mocks\LoripsumMock;
 use Doctrine\DBAL\Connection;
@@ -19,32 +19,48 @@ class StorageTest extends BoltUnitTest
     public function testSetup()
     {
         $this->resetDb();
+        $this->addSomeContent();
     }
 
+    /**
+     * We copy the 'Pages' ContentType into a 'Fakes' configuration and test
+     * against this, as PHPUnit keeps the mock in the $this->mockObjects private
+     * property array and any further calls to the 'Pages' repo will (currently)
+     * fail as the Application object is torn down at the end of the test/class.
+     */
     public function testGetContentObject()
     {
         $app = $this->getApp();
         $storage = new Storage($app);
         $content = $storage->getContentObject('pages');
-        $this->assertInstanceOf('Bolt\Content', $content);
+        $this->assertInstanceOf('Bolt\Legacy\Content', $content);
 
-        $fields = $app['config']->get('contenttypes/pages/fields');
+        // Fake it until we make it… to the end of the test suite.
+        $contentType = $app['config']->get('contenttypes/pages');
+        $contentType['name'] = 'Fakes';
+        $contentType['singular_name'] = 'Fake';
+        $contentType['slug'] = 'fakes';
+        $contentType['singular_slug'] = 'fake';
+        $contentType['tablename'] = 'fakes';
+        $app['config']->set('contenttypes/fakes', $contentType);
 
-        $mock = $this->getMock('Bolt\Content', null, [$app], 'Pages');
-        $content = $storage->getContentObject(['class' => 'Pages', 'fields' => $fields]);
-        $this->assertInstanceOf('Pages', $content);
-        $this->assertInstanceOf('Bolt\Content', $content);
+        $fields = $app['config']->get('contenttypes/fakes/fields');
 
-        // Test that a class not instanceof Bolt\Content fails
+        $mock = $this->getMock('Bolt\Legacy\Content', [], [$app], 'Fakes');
+        $content = $storage->getContentObject(['class' => 'Fakes', 'fields' => $fields]);
+        $this->assertInstanceOf('Fakes', $content);
+        $this->assertInstanceOf('Bolt\Legacy\Content', $content);
+
+        // Test that a class not instanceof Bolt\Legacy\Content fails
         $mock = $this->getMock('stdClass', null, [], 'Failing');
-        $this->setExpectedException('Exception', 'Failing does not extend \Bolt\Content.');
+        $this->setExpectedException('Exception', 'Failing does not extend \Bolt\Legacy\Content.');
         $content = $storage->getContentObject(['class' => 'Failing', 'fields' => $fields]);
     }
 
     public function testPreFill()
     {
         $app = $this->getApp();
-        $app['users']->users = [1 => $this->addDefaultUser($app)];
+        $this->addDefaultUser($app);
         $prefillMock = new LoripsumMock();
         $app['prefill'] = $prefillMock;
 
@@ -137,7 +153,7 @@ class StorageTest extends BoltUnitTest
         $app = $this->getApp();
         $storage = new Storage($app);
         $showcase = $storage->getEmptyContent('showcase');
-        $this->assertInstanceOf('Bolt\Content', $showcase);
+        $this->assertInstanceOf('Bolt\Legacy\Content', $showcase);
         $this->assertEquals('showcases', $showcase->contenttype['slug']);
     }
 
@@ -229,8 +245,24 @@ class StorageTest extends BoltUnitTest
     {
     }
 
-    public function testGetContentType()
+    /**
+     * The legacy getContentType method should be able to find contenttypes by key, slugified key, slug, slugified slug,
+     * singular slug, slugified singular slug, singular name and name.
+
+     * @dataProvider contentTypeProvider
+     */
+    public function testGetContentType($contentType)
     {
+        /** @var \Bolt\Application */
+        $app = $this->getApp();
+
+        $app['config']->set('contenttypes/' . $contentType['key'], $contentType);
+
+        // We should be able to retrieve $contentType when querying getContentType() for its key, slug, singular
+        // slug, name and singular name
+        foreach ($contentType as $key => $value) {
+            $this->assertSame($contentType, $app['storage']->getContentType($value));
+        }
     }
 
     public function testGetTaxonomyType()
@@ -273,6 +305,33 @@ class StorageTest extends BoltUnitTest
     {
     }
 
+    /**
+     * Seed some dummy content types for testing the contenttype query methods
+     */
+    public function contentTypeProvider()
+    {
+        return [
+            [
+                [
+                    'key'           => 'foo_bars',
+                    'slug'          => 'foo_bars',
+                    'singular_slug' => 'foo_bar',
+                    'name'          => 'FooBars',
+                    'singular_name' => 'Foo Bar'
+                ]
+            ],
+            [
+                [
+                    'key'           => 'somethingelse',
+                    'slug'          => 'things',
+                    'singular_slug' => 'thing',
+                    'name'          => 'Somethings',
+                    'singular_name' => 'Something'
+                ]
+            ]
+        ];
+    }
+
     private function getDbMockBuilder(Connection $db)
     {
         return $this->getMockBuilder('\Doctrine\DBAL\Connection')
@@ -286,9 +345,15 @@ class StorageMock extends Storage
 {
     public $queries = [];
 
+    protected function tableExists($name)
+    {
+        return true;
+    }
+
     protected function executeGetContentQueries($decoded)
     {
         $this->queries[] = $decoded;
+
         return parent::executeGetContentQueries($decoded);
     }
 }

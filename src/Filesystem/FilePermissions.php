@@ -2,7 +2,7 @@
 
 namespace Bolt\Filesystem;
 
-use Bolt\Application;
+use Bolt\Config;
 use Bolt\Library as Lib;
 
 /**
@@ -12,8 +12,8 @@ use Bolt\Library as Lib;
  */
 class FilePermissions
 {
-    /** @var \Bolt\Application */
-    protected $app;
+    /** @var Config */
+    protected $config;
     /** @var string[] List of Filesystem prefixes that are editable. */
     protected $allowedPrefixes = [];
     /** @var array Regex list represented editable resources. */
@@ -26,22 +26,23 @@ class FilePermissions
     /**
      * Constructor, initialize filters rules.
      *
-     * @param Application $app
+     * @param Config $config
      */
-    public function __construct(Application $app)
+    public function __construct(Config $config)
     {
-        $this->app = $app;
+        $this->config = $config;
 
         $this->allowedPrefixes = [
             'config',
             'files',
             'theme',
+            'themes',
         ];
 
         $this->blocked = [
             '#.php$#',
             '#\.htaccess#',
-            '#\.htpasswd#'
+            '#\.htpasswd#',
         ];
     }
 
@@ -96,7 +97,7 @@ class FilePermissions
         $extension = strtolower(Lib::getExtension($originalFilename));
         $allowedExtensions = $this->getAllowedUploadExtensions();
 
-        return (in_array($extension, $allowedExtensions));
+        return in_array($extension, $allowedExtensions);
     }
 
     /**
@@ -106,7 +107,7 @@ class FilePermissions
      */
     public function getAllowedUploadExtensions()
     {
-        return $this->app['config']->get('general/accept_file_types');
+        return $this->config->get('general/accept_file_types');
     }
 
     /**
@@ -122,6 +123,10 @@ class FilePermissions
             $uploadMax = Lib::filesizeToBytes(ini_get('upload_max_filesize'));
             if (($uploadMax > 0) && ($uploadMax < $size)) {
                 $size = $uploadMax;
+            } else {
+                // This reduces the reported max size by a small amount to take account of the difference between
+                // the uploaded file size and the size of the eventual post including other data.
+                $size = $size * 0.995;
             }
 
             $this->maxUploadSize = $size;

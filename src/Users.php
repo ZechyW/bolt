@@ -4,38 +4,48 @@ namespace Bolt;
 
 use Bolt\AccessControl\Permissions;
 use Bolt\Storage\Entity;
+use Bolt\Storage\Repository;
 use Bolt\Translation\Translator as Trans;
+use Doctrine\DBAL\Exception\TableNotFoundException;
+use Silex;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Security\Csrf\CsrfToken;
 
 /**
  * Class to handle things dealing with users.
+ *
+ * @deprecated Deprecated since 3.0, to be removed in 4.0.
  */
 class Users
 {
+    /** @internal Visibility will be changed to 'private' for these two in Bolt 3.0 */
     public $users = [];
     public $currentuser;
 
-    /** @deprecated Will be removed in Bolt 3.0 */
-    public $usertable;
-    public $authtokentable;
-
-    /** @var \Bolt\Storage\Repository\UsersRepository */
+    /** @var Repository\UsersRepository */
     protected $repository;
 
     /** @var \Silex\Application $app */
     private $app;
 
     /**
-     * @param Application $app
+     * @param Silex\Application $app
      */
-    public function __construct(Application $app)
+    public function __construct(Silex\Application $app)
     {
         $this->app = $app;
-        $this->repository = $this->app['storage']->getRepository('Bolt\Storage\Entity\Users');
+    }
 
-        /** @deprecated Will be removed in Bolt 3.0 */
-        $this->usertable = $this->app['storage']->getTablename('users');
-        $this->authtokentable = $this->app['storage']->getTablename('authtoken');
+    /**
+     * @return Repository\UsersRepository
+     */
+    private function getRepository()
+    {
+        if ($this->repository === null) {
+            $this->repository = $this->app['storage']->getRepository('Bolt\Storage\Entity\Users');
+        }
+
+        return $this->repository;
     }
 
     /**
@@ -55,59 +65,47 @@ class Users
         $user->setUsername($this->app['slugify']->slugify($user->getUsername()));
 
         // Save the entity
-        return $this->repository->save($user);
+        return $this->getRepository()->save($user);
     }
 
     /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
+     * @deprecated Deprecated since 3.0, to be removed in 4.0.
      */
     public function isValidSession()
     {
         $request = Request::createFromGlobals();
+        $authCookie = $request->cookies->get($this->app['token.authentication.name']);
+        if ($authCookie === null) {
+            return false;
+        }
 
-        return $this->app['authentication']->isValidSession($request->cookies->get($this->app['token.authentication.name']));
+        return $this->app['access_control']->isValidSession($request->cookies->get($this->app['token.authentication.name']));
     }
 
     /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
+     * @deprecated Deprecated since 3.0, to be removed in 4.0.
      */
     public function checkValidSession()
     {
         $request = Request::createFromGlobals();
+        $authCookie = $request->cookies->get($this->app['token.authentication.name']);
+        if ($authCookie === null) {
+            return false;
+        }
 
-        return $this->app['authentication']->isValidSession($request->cookies->get($this->app['token.authentication.name']));
+        return $this->app['access_control']->isValidSession($request->cookies->get($this->app['token.authentication.name']));
     }
 
     /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
-     *
-     * Unsafe! Do not use!
+     * @deprecated Deprecated since 3.0, to be removed in 4.0.
      */
     public function getAntiCSRFToken()
     {
-        $request = $this->app['request'];
-        $seed = $this->app['request']->cookies->get($this->app['token.session.name']);
-
-        if ($this->app['config']->get('general/cookies_use_remoteaddr')) {
-            $seed .= '-' . $request->getClientIp() ?: '127.0.0.1';
-        }
-        if ($this->app['config']->get('general/cookies_use_browseragent')) {
-            $seed .= '-' . $request->server->get('HTTP_USER_AGENT');
-        }
-        if ($this->app['config']->get('general/cookies_use_httphost')) {
-            $seed .= '-' . $request->getHost();
-        }
-
-        $token = substr(md5($seed), 0, 8);
-
-        return $token;
-
+        return $this->app['csrf']->getToken('bolt')->getValue();
     }
 
     /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
-     *
-     * Unsafe! Do not use!
+     * @deprecated Deprecated since 3.0, to be removed in 4.0.
      */
     public function checkAntiCSRFToken($token = '')
     {
@@ -115,21 +113,22 @@ class Users
             $token = $this->app['request']->get('bolt_csrf_token');
         }
 
-        if ($token === $this->getAntiCSRFToken()) {
+        $token = new CsrfToken('bolt', $token);
+        if ($this->app['csrf']->isTokenValid($token)) {
             return true;
         } else {
-            $this->app['logger.flash']->error('The security token was incorrect. Please try again.');
+            $this->app['logger.flash']->warning('The security token was incorrect. Please try again.');
 
             return false;
         }
     }
 
     /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
+     * @deprecated Deprecated since 3.0, to be removed in 4.0.
      */
     public function getActiveSessions()
     {
-        return $this->app['authentication']->getActiveSessions();
+        return $this->app['access_control']->getActiveSessions();
     }
 
     /**
@@ -141,81 +140,22 @@ class Users
      */
     public function deleteUser($id)
     {
-        $user = $this->repository->find($id);
+        $user = $this->getRepository()->find($id);
 
         if (!$user) {
-            $this->app['logger.flash']->error(Trans::__('That user does not exist.'));
+            $this->app['logger.flash']->warning(Trans::__('general.phrase.user-not-exist'));
 
             return false;
         }
 
         $userName = $user->getUsername();
-        if ($result = $this->repository->delete($user)) {
+        if ($result = $this->getRepository()->delete($user)) {
+            /** @var Repository\AuthtokenRepository $authtokenRepository */
             $authtokenRepository = $this->app['storage']->getRepository('Bolt\Storage\Entity\Authtoken');
             $authtokenRepository->deleteTokens($userName);
         }
 
         return $result;
-    }
-
-    /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
-     */
-    public function login($user, $password)
-    {
-        $request = Request::createFromGlobals();
-
-        return $this->app['authentication.login']->login($request, $user, $password);
-    }
-
-    /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
-     */
-    protected function loginEmail($email, $password)
-    {
-        return $this->app['authentication.login']->login($email, $password);
-    }
-
-    /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
-     */
-    public function loginUsername($username, $password)
-    {
-        return $this->app['authentication.login']->login($username, $password);
-    }
-
-    /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
-     */
-    public function loginAuthtoken()
-    {
-        $request = Request::createFromGlobals();
-
-        return $this->app['authentication.login']->login($request, null, null);
-    }
-
-    /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
-     */
-    public function resetPasswordRequest($username)
-    {
-        return $this->app['authentication.password']->resetPasswordRequest($username);
-    }
-
-    /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
-     */
-    public function resetPasswordConfirm($token)
-    {
-        return $this->app['authentication.password']->resetPasswordConfirm($token);
-    }
-
-    /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
-     */
-    public function logout()
-    {
-        return $this->app['authentication']->revokeSession();
     }
 
     /**
@@ -237,17 +177,22 @@ class Users
      */
     public function getUsers()
     {
-        if (empty($this->users)) {
-            if (!$tempusers = $this->repository->findAll()) {
+        if (!empty($this->users)) {
+            return $this->users;
+        }
+
+        try {
+            if (!$tempusers = $this->getRepository()->getUsers()) {
                 return [];
             }
 
             /** @var \Bolt\Storage\Entity\Users $userEntity */
             foreach ($tempusers as $userEntity) {
-                $key = $userEntity->getUsername();
-                $userEntity->setPassword('**dontchange**');
-                $this->users[$key] = $userEntity->toArray();
+                $id = $userEntity->getId();
+                $this->users[$id] = $userEntity->toArray();
             }
+        } catch (TableNotFoundException $e) {
+            return [];
         }
 
         return $this->users;
@@ -260,9 +205,9 @@ class Users
      */
     public function hasUsers()
     {
-        $rows = $this->repository->hasUsers();
+        $rows = $this->getRepository()->hasUsers();
 
-        return $rows ? $rows['count'] : 0;
+        return $rows ? (integer) $rows['count'] : 0;
     }
 
     /**
@@ -274,10 +219,21 @@ class Users
      */
     public function getUser($userId)
     {
-        if ($userEntity = $this->repository->getUser($userId)) {
-            $userEntity->setPassword('**dontchange**');
+        // Make sure users have been 'got' already.
+        $this->getUsers();
 
-            return $userEntity->toArray();
+        // In most cases by far, we'll request an ID, and we can return it here.
+        if (array_key_exists($userId, $this->users)) {
+            return $this->users[$userId];
+        }
+
+        // Fallback: See if we can get it by username or email address.
+        try {
+            if ($userEntity = $this->getRepository()->getUser($userId)) {
+                return $userEntity->toArray();
+            }
+        } catch (TableNotFoundException $e) {
+            return false;
         }
 
         return false;
@@ -317,7 +273,7 @@ class Users
     /**
      * Get the username of the current user.
      *
-     * @deprecated since v2.3 and to be removed in v3
+     * @deprecated Deprecated since 3.0, to be removed in 4.0.
      *
      * @return string
      */
@@ -343,18 +299,18 @@ class Users
     /**
      * Enable or disable a user, specified by id.
      *
-     * @param integer|string $id
-     * @param boolean        $enabled
+     * @param integer|string  $id
+     * @param boolean|integer $enabled
      *
      * @return integer
      */
-    public function setEnabled($id, $enabled = 1)
+    public function setEnabled($id, $enabled = true)
     {
         if (!$user = $this->getUser($id)) {
             return false;
         }
 
-        $user['enabled'] = $enabled;
+        $user['enabled'] = (integer) $enabled;
 
         return $this->saveUser($user);
     }
@@ -482,10 +438,10 @@ class Users
         // Make sure the DB is updated. Note, that at this point we currently don't have
         // the permissions to do so, but if we don't, update the DB, we can never add the
         // role 'root' to the current user.
-        $this->app['schema']->repairTables();
+        $this->app['schema']->update();
 
         // Show a helpful message to the user.
-        $this->app['logger.flash']->info(Trans::__("There should always be at least one 'root' user. You have just been promoted. Congratulations!"));
+        $this->app['logger.flash']->info(Trans::__('general.phrase.missing-root-jackpot'));
 
         // If we reach this point, there is no user 'root'. We promote the current user.
         return $this->addRole($this->getCurrentUsername(), 'root');
@@ -596,10 +552,10 @@ class Users
     }
 
     /**
-     * @deprecated Since Bolt 2.3 and will be removed in Bolt 3.
+     * @deprecated Deprecated since 3.0, to be removed in 4.0.
      */
     public function updateUserLogin($user)
     {
-        return $this->app['authentication']->updateUserLogin($user);
+        return $this->app['access_control']->updateUserLogin($user);
     }
 }

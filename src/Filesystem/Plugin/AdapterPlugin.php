@@ -2,10 +2,11 @@
 
 namespace Bolt\Filesystem\Plugin;
 
-use Bolt\Application;
-use League\Flysystem\Filesystem;
-use League\Flysystem\FilesystemInterface;
-use League\Flysystem\PluginInterface;
+use Bolt\Filesystem\Filesystem;
+use Bolt\Filesystem\FilesystemInterface;
+use Bolt\Filesystem\MountPointAwareInterface;
+use Bolt\Filesystem\PluginInterface;
+use Silex\Application;
 
 abstract class AdapterPlugin implements PluginInterface
 {
@@ -25,6 +26,10 @@ abstract class AdapterPlugin implements PluginInterface
     public function setFilesystem(FilesystemInterface $filesystem)
     {
         $this->filesystem = $filesystem;
+        
+        if ($this->filesystem instanceof MountPointAwareInterface) {
+            $this->namespace = $this->filesystem->getMountPoint();
+        }
     }
 
     public function getDefault()

@@ -9,6 +9,8 @@
  * @param {undefined} undefined - Define undefined.
  */
 (function (bolt, $, undefined) {
+    'use strict';
+
     /**
      * Configuration data store.
      *
@@ -32,7 +34,7 @@
      * @param {string} key - The key of the value to fetch.
      * @returns {string|number|Object|undefined}conf.get =
      */
-     var conf = function (key) {
+    var conf = function (key) {
         var keys = key.split('.'),
             result = configData,
             i;
@@ -45,7 +47,7 @@
             }
         }
 
-         return result;
+        return result;
     };
     // Set alias function
     conf.get = conf;

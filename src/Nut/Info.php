@@ -10,13 +10,20 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 class Info extends BaseCommand
 {
+    /**
+     * @see \Symfony\Component\Console\Command\Command::configure()
+     */
     protected function configure()
     {
         $this
             ->setName('info')
-            ->setDescription('Display phpinfo().');
+            ->setDescription('Display phpinfo().')
+        ;
     }
 
+    /**
+     * @see \Symfony\Component\Console\Command\Command::execute()
+     */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         ob_start();

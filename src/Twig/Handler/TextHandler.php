@@ -53,9 +53,8 @@ class TextHandler
 
         // Check for Windows to find and replace the %e modifier correctly
         // @see: http://php.net/strftime
-        if (strtoupper(substr(PHP_OS, 0, 3)) == 'WIN') {
-            $format = preg_replace('#(?<!%)((?:%%)*)%e#', '\1%#d', $format);
-        }
+        $os = strtoupper(substr(PHP_OS, 0, 3));
+        $format = $os !== 'WIN' ? $format : preg_replace('#(?<!%)((?:%%)*)%e#', '\1%#d', $format);
 
         // According to http://php.net/manual/en/function.setlocale.php manual
         // if the second parameter is "0", the locale setting is not affected,
@@ -133,20 +132,12 @@ class TextHandler
      */
     public function testJson($string)
     {
-        json_decode($string, true);
+        if (is_scalar($string) || is_callable([$string, '__toString'])) {
+            json_decode((string) $string, true);
 
-        return (json_last_error() === JSON_ERROR_NONE);
-    }
+            return json_last_error() === JSON_ERROR_NONE;
+        }
 
-    /**
-     * UCfirsts the given string.
-     *
-     * @param string $str
-     *
-     * @return string Same string where first character is in upper case
-     */
-    public function ucfirst($str)
-    {
-        return ucfirst($str);
+        return false;
     }
 }

@@ -1,4 +1,5 @@
 <?php
+
 namespace Bolt\Tests\Controller\Backend;
 
 use Bolt\Controller\Zone;
@@ -42,30 +43,30 @@ class GeneralTest extends ControllerUnitTest
 
         $response = $this->controller()->about();
 
-        $this->assertEquals('about/about.twig', $response->getTemplateName());
+        $this->assertEquals('@bolt/about/about.twig', $response->getTemplateName());
     }
 
     public function testClearCache()
     {
         $this->allowLogin($this->getApp());
-        $cache = $this->getMock('Bolt\Cache', ['clearCache'], [__DIR__, $this->getApp()]);
+        $cache = $this->getCacheMock();
         $cache->expects($this->at(0))
-            ->method('clearCache')
-            ->will($this->returnValue(['successfiles' => '1.txt', 'failedfiles' => '2.txt']));
+            ->method('flushAll')
+            ->will($this->returnValue(false));
 
         $cache->expects($this->at(1))
-            ->method('clearCache')
-            ->will($this->returnValue(['successfiles' => '1.txt']));
+            ->method('flushAll')
+            ->will($this->returnValue(true));
 
         $this->setService('cache', $cache);
         $this->setRequest(Request::create('/bolt/clearcache'));
-        $this->checkTwigForTemplate($this->getApp(), 'clearcache/clearcache.twig');
+        $this->checkTwigForTemplate($this->getApp(), '@bolt/clearcache/clearcache.twig');
 
         $this->controller()->clearCache();
         $this->assertNotEmpty($this->getFlashBag()->get('error'));
 
         $this->setRequest(Request::create('/bolt/clearcache'));
-        $this->checkTwigForTemplate($this->getApp(), 'clearcache/clearcache.twig');
+        $this->checkTwigForTemplate($this->getApp(), '@bolt/clearcache/clearcache.twig');
 
         $this->controller()->clearCache();
         $this->assertNotEmpty($this->getFlashBag()->get('success'));
@@ -73,10 +74,10 @@ class GeneralTest extends ControllerUnitTest
 
     public function testDashboard()
     {
-        $twig = $this->getMockTwig();
+        $render = $this->getRenderMock($this->getApp());
         $phpunit = $this;
         $testHandler = function ($template, $context) use ($phpunit) {
-            $phpunit->assertEquals('dashboard/dashboard.twig', $template);
+            $phpunit->assertEquals('@bolt/dashboard/dashboard.twig', $template);
             $phpunit->assertNotEmpty($context['context']);
             $phpunit->assertArrayHasKey('latest', $context['context']);
             $phpunit->assertArrayHasKey('suggestloripsum', $context['context']);
@@ -84,12 +85,12 @@ class GeneralTest extends ControllerUnitTest
             return new Response();
         };
 
-        $twig->expects($this->any())
+        $render->expects($this->atLeastOnce())
             ->method('render')
             ->will($this->returnCallback($testHandler));
         $this->allowLogin($this->getApp());
 
-        $this->setService('render', $twig);
+        $this->setService('render', $render);
 
         $this->setRequest(Request::create('/bolt'));
         $this->controller()->dashboard();
@@ -100,7 +101,7 @@ class GeneralTest extends ControllerUnitTest
         $this->allowLogin($this->getApp());
 
         $this->setRequest(Request::create('/bolt/omnisearch', 'GET', ['q' => 'test']));
-        $this->checkTwigForTemplate($this->getApp(), 'omnisearch/omnisearch.twig');
+        $this->checkTwigForTemplate($this->getApp(), '@bolt/omnisearch/omnisearch.twig');
 
         $this->controller()->omnisearch($this->getRequest());
     }
@@ -110,7 +111,7 @@ class GeneralTest extends ControllerUnitTest
         $this->setRequest(Request::create('/bolt/prefill'));
         $response = $this->controller()->prefill($this->getRequest());
         $context = $response->getContext();
-        $this->assertEquals(3, count($context['context']['contenttypes']));
+        $this->assertEquals(4, count($context['context']['contenttypes']));
         $this->assertInstanceOf('Symfony\Component\Form\FormView', $context['context']['form']);
 
         // Test the post
@@ -121,7 +122,12 @@ class GeneralTest extends ControllerUnitTest
         // Test for the Exception if connection fails to the prefill service
         $store = $this->getMock('Bolt\Storage', ['preFill'], [$this->getApp()]);
 
-        $guzzleRequest = new \GuzzleHttp\Message\Request('GET', '');
+        $app = $this->getApp();
+        if ($app['guzzle.api_version'] === 5) {
+            $guzzleRequest = new \GuzzleHttp\Message\Request('GET', '');
+        } else {
+            $guzzleRequest = new \GuzzleHttp\Psr7\Request('GET', '');
+        }
         $store->expects($this->any())
             ->method('preFill')
             ->will($this->returnCallback(function () use ($guzzleRequest) {
@@ -133,7 +139,7 @@ class GeneralTest extends ControllerUnitTest
         $logger = $this->getMock('Monolog\Logger', ['error'], ['test']);
         $logger->expects($this->once())
             ->method('error')
-            ->with("Timeout attempting to the 'Lorem Ipsum' generator. Unable to add dummy content.");
+            ->with("Timeout attempting connection to the 'Lorem Ipsum' generator. Unable to add dummy content.");
         $this->setService('logger.system', $logger);
 
         $this->setRequest(Request::create('/bolt/prefill', 'POST', ['contenttypes' => 'pages']));
@@ -149,7 +155,7 @@ class GeneralTest extends ControllerUnitTest
         $response = $this->controller()->translation($this->getRequest(), 'contenttypes', 'en_CY');
 
         $this->assertTrue($response instanceof BoltResponse, 'Response is not instance of BoltResponse');
-        $this->assertEquals('editlocale/editlocale.twig', $response->getTemplateName());
+        $this->assertEquals('@bolt/editlocale/editlocale.twig', $response->getTemplateName());
         $context = $response->getContext();
         $this->assertEquals('contenttypes.en_CY.yml', $context['context']['basename']);
 
@@ -160,8 +166,8 @@ class GeneralTest extends ControllerUnitTest
             [
                 'form' => [
                     'contents' => 'test content at least 10 chars',
-                    '_token'   => 'xyz'
-                ]
+                    '_token'   => 'xyz',
+                ],
             ]
         ));
 
@@ -179,8 +185,8 @@ class GeneralTest extends ControllerUnitTest
             [
                 'form' => [
                     'contents' => '- this is invalid yaml markup: *thisref',
-                    '_token'   => 'xyz'
-                ]
+                    '_token'   => 'xyz',
+                ],
             ]
         ));
         $this->controller()->translation($this->getRequest(), 'contenttypes', 'en_CY');

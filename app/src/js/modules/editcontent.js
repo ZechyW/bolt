@@ -12,6 +12,8 @@
  * @param {Object|undefined} ckeditor - CKEDITOR global or undefined.
  */
 (function (bolt, $, window, moment, bootbox, ckeditor) {
+    'use strict';
+
     /**
      * Bind data.
      *
@@ -35,28 +37,99 @@
     var editcontent = {};
 
     /**
-     * Initializes the mixin.
+     * Gets the current value of an input element processed to be comparable
      *
      * @static
-     * @function init
+     * @function getComparable
      * @memberof Bolt.editcontent
      *
-     * @param {BindData} data - Editcontent configuration data
+     * @param {Object} item - Input element
+     *
+     * @returns {string|undefined}
      */
-    editcontent.init = function (data) {
-        initValidation();
-        initSave();
-        initSaveNew();
-        initSaveContinue(data);
-        initPreview(data.singularSlug);
-        initLiveEditor(data.singularSlug);
-        initDelete();
-        initTabGroups();
-        bolt.liveEditor.init(data);
-        window.setTimeout(function () {
-            initKeyboardShortcuts();
-        }, 1000);
-    };
+    function getComparable(item) {
+        var val;
+
+        if (item.name) {
+            val = $(item).val();
+            if (item.type === 'select-multiple') {
+                val = JSON.stringify(val);
+            }
+        }
+
+        return val;
+    }
+
+    /**
+     * Detect if changes were made to the content.
+     *
+     * @static
+     * @function hasChanged
+     * @memberof Bolt.editcontent
+     *
+     * @returns {boolean}
+     */
+    function hasChanged() {
+        var changes = 0;
+
+        $('form#editcontent').find('input, textarea, select').each(function () {
+            if (this.type === 'textarea' && $(this).hasClass('ckeditor')) {
+                if (ckeditor.instances[this.id].checkDirty()) {
+                    changes++;
+                }
+            } else {
+                var val = getComparable(this);
+                if (val !== undefined && $(this).data('watch') !== val) {
+                    changes++;
+                }
+            }
+        });
+
+        return changes > 0;
+    }
+
+    /**
+     * Remember current state of content for change detection.
+     *
+     * @static
+     * @function watchChanges
+     * @memberof Bolt.editcontent
+     */
+    function watchChanges() {
+        $('form#editcontent').find('input, textarea, select').each(function () {
+            if (this.type === 'textarea' && $(this).hasClass('ckeditor')) {
+                if (ckeditor.instances[this.id].checkDirty()) {
+                    ckeditor.instances[this.id].updateElement();
+                    ckeditor.instances[this.id].resetDirty();
+                }
+            }else{
+                var val = getComparable(this);
+                if (val !== undefined) {
+                    $(this).data('watch', val);
+                }
+            }
+        });
+
+        // Initialize handler for 'closing window'
+        window.onbeforeunload = function () {
+            if (hasChanged() || bolt.liveEditor.active) {
+                return bolt.data('editcontent.msg.change_quit');
+            }
+        };
+    }
+
+    /**
+     * Disable the "save" buttons, to indicate stuff is being done in the background.
+     *
+     * @static
+     * @function indicateSavingAction
+     * @memberof Bolt.editcontent
+     */
+    function indicateSavingAction() {
+        $('#sidebarsavecontinuebutton, #savecontinuebutton, #liveeditorsavecontinuebutton').addClass('disabled');
+        $('#sidebarsavecontinuebutton i, #savecontinuebutton i').addClass('fa-spin fa-spinner');
+        $('p.lastsaved').text(bolt.data('editcontent.msg.saving'));
+    }
 
     /**
      * Set validation handlers.
@@ -78,8 +151,6 @@
 
                     return false;
                 }
-                // Submitting, disable warning.
-                window.onbeforeunload = null;
             }
         );
 
@@ -124,13 +195,11 @@
      * @static
      * @function initPreview
      * @memberof Bolt.editcontent
-     *
-     * @param {string} slug - Contenttype singular slug.
      */
-    function initPreview(slug) {
+    function initPreview() {
         // To preview the page, we set the target of the form to a new URL, and open it in a new window.
         $('#previewbutton, #sidebarpreviewbutton').bind('click', function (e) {
-            var newAction = bolt.conf('paths.root') + 'preview/' + slug;
+            var newAction = $(e.target).data('url');
 
             e.preventDefault();
             $('#editcontent').attr('action', newAction).attr('target', '_blank').submit();
@@ -144,11 +213,8 @@
      * @static
      * @function initLiveEditor
      * @memberof Bolt.editcontent
-     *
-     * @param {string} slug - Contenttype singular slug.
      */
-    function initLiveEditor(slug) {
-
+    function initLiveEditor() {
     }
 
     /**
@@ -171,13 +237,22 @@
                             ctype = $('#contenttype').val(),
                             id = $('#id').val(),
                             token = form.find('input[name="bolt_csrf_token"]').val(),
-                            url = pathBolt + 'content/deletecontent/' + ctype + '/' + id + '?bolt_csrf_token=' + token;
+                            url = bolt.conf('paths.async') + 'content/action',
+                            modifications = {};
+
+                        modifications[ctype] = {};
+                        modifications[ctype][id] = {'delete': null};
 
                         // Fire delete request.
                         $.ajax({
                             url: url,
-                            type: 'GET',
-                            success: function (feedback) {
+                            type: 'POST',
+                            data: {
+                                'bolt_csrf_token': token,
+                                'contenttype': ctype,
+                                'actions': modifications
+                            },
+                            success: function () {
                                 window.location.href = pathBolt + 'overview/' + $('#contenttype').val();
                             }
                         });
@@ -201,6 +276,7 @@
         });
 
         $('#savebutton').bind('click', function () {
+            indicateSavingAction();
             watchChanges();
         });
     }
@@ -214,6 +290,7 @@
      */
     function initSaveNew() {
         $('#sidebarsavenewbutton, #savenewbutton').bind('click', function () {
+            indicateSavingAction();
             watchChanges();
 
             // Do a regular post, and expect to be redirected back to the "new record" page.
@@ -232,6 +309,11 @@
      * @function initSaveContinue
      * @memberof Bolt.editcontent
      *
+     * @fires "Bolt.Content.Save.Start"
+     * @fires "Bolt.Content.Save.Done"
+     * @fires "Bolt.Content.Save.Fail"
+     * @fires "Bolt.Content.Save.Always"
+     *
      * @param {BindData} data - Editcontent configuration data
      */
     function initSaveContinue(data) {
@@ -249,33 +331,50 @@
                 savedon = data.savedon,
                 msgNotSaved = data.msgNotSaved;
 
-            // Disable the buttons, to indicate stuff is being done.
-            $('#sidebarsavecontinuebutton, #savecontinuebutton').addClass('disabled');
-            $('#sidebarsavecontinuebutton i, #savecontinuebutton i').addClass('fa-spin fa-spinner');
-            $('p.lastsaved').text(bolt.data('editcontent.msg.saving'));
+            indicateSavingAction();
 
             if (newrecord) {
                 watchChanges();
+
+                if (bolt.liveEditor.active) {
+                    bolt.liveEditor.stop();
+                }
 
                 // New record. Do a regular post, and expect to be redirected back to this page.
                 $('#editcontent').attr('action', '?returnto=new').submit();
             } else {
                 watchChanges();
 
+                // Trigger save started event
+                bolt.events.fire('Bolt.Content.Save.Start');
+
                 // Existing record. Do an 'ajaxy' post to update the record.
                 // Let the controller know we're calling AJAX and expecting to be returned JSON.
                 $.post('?returnto=ajax', $('#editcontent').serialize())
                     .done(function (data) {
-                        $('p.lastsaved').html(savedon);
-                        $('p.lastsaved').find('strong').text(moment(data.datechanged).format('MMM D, HH:mm'));
-                        $('p.lastsaved').find('time').attr('datetime', moment(data.datechanged).format());
-                        $('p.lastsaved').find('time').attr('title', moment(data.datechanged).format());
-                        bolt.moments.update();
+                        bolt.events.fire('Bolt.Content.Save.Done', {form: data});
+
+                        // Submit was successful, disable warning.
+                        window.onbeforeunload = null;
+
+                        $('p.lastsaved')
+                            .removeClass('alert alert-danger')
+                            .html(savedon)
+                            .find('strong')
+                            .text(moment(data.datechanged).format('MMM D, HH:mm'))
+                            .end()
+                            .find('.buic-moment')
+                            .buicMoment()
+                            .buicMoment('set', data.datechanged);
 
                         $('a#lastsavedstatus strong').html(
                             '<i class="fa fa-circle status-' + $('#statusselect option:selected').val() + '"></i> ' +
                             $('#statusselect option:selected').text()
                         );
+                        // Display the 'save succeeded' icon in the buttons
+                        $('#sidebarsavecontinuebutton i, #savecontinuebutton i')
+                            .removeClass('fa-flag fa-spin fa-spinner fa-exclamation-triangle')
+                            .addClass('fa-check');
 
                         // Update anything changed by POST_SAVE handlers
                         if ($.type(data) === 'object') {
@@ -286,16 +385,29 @@
                                     $.each(item, function (subindex, subitem) {
                                         $(':input[name="' + index + '[' + subindex + ']"]').val(subitem);
                                     });
+                                } else if ($.type(item) === 'array') {
+                                    // In 2.3 we return filelists, and imagelist
+                                    // as an array of "objects"… because JSON…
+                                    // and they now fail here because… JavaScript…
+                                    // so we're catching arrays and ignoring
+                                    // them, someone else can fix this!
                                 } else {
-                                    // Either an input or a textarea, so get by ID
-                                    $('#' + index).val(item);
+                                    var field = $('#editcontent [name=' + index + ']');
+
+                                    if (field.attr('type') === 'checkbox') {
+                                        // A checkbox, so set with prop
+                                        field.prop('checked', item === '1');
+                                    } else {
+                                        // Either an input or a textarea, so set with val
+                                        field.val(item);
+                                    }
 
                                     // If there is a CKEditor attached to our element, update it
                                     if (ckeditor && ckeditor.instances[index]) {
                                         ckeditor.instances[index].setData(
                                             item,
                                             {
-                                                callback: function() {
+                                                callback: function () {
                                                     this.resetDirty();
                                                 }
                                             }
@@ -309,16 +421,33 @@
 
                         watchChanges();
                     })
-                    .fail(function(){
-                        $('p.lastsaved').text(msgNotSaved);
+                    .fail(function (data) {
+                        bolt.events.fire('Bolt.Content.Save.Fail');
+
+                        var response = $.parseJSON(data.responseText);
+                        var message = '<b>' + msgNotSaved + '</b><br><small>' + response.error.message + '</small>';
+
+                        $('p.lastsaved')
+                            .html(message)
+                            .addClass('alert alert-danger');
+
+                        // Display the 'save failed' icon in the buttons
+                        $('#sidebarsavecontinuebutton i, #savecontinuebutton i')
+                            .removeClass('fa-flag fa-spin fa-spinner')
+                            .addClass('fa-exclamation-triangle');
                     })
-                    .always(function(){
+                    .always(function () {
+                        bolt.events.fire('Bolt.Content.Save.Always');
+
                         // Re-enable buttons
-                        window.setTimeout(function(){
-                            $('#sidebarsavecontinuebutton, #savecontinuebutton').removeClass('disabled').blur();
-                            $('#sidebarsavecontinuebutton i, #savecontinuebutton i').removeClass('fa-spin fa-spinner');
-                        }, 300);
-                    });
+                        window.setTimeout(function () {
+                            $('#sidebarsavecontinuebutton, #savecontinuebutton, #liveeditorsavecontinuebutton').removeClass('disabled').blur();
+                        }, 1000);
+                        window.setTimeout(function () {
+                            $('#sidebarsavecontinuebutton i, #savecontinuebutton i').addClass('fa-flag');
+                        }, 5000);
+                    }
+                );
             }
         });
     }
@@ -332,7 +461,7 @@
      * @function initKeyboardShortcuts
      * @memberof Bolt.editcontent
      */
-    function initKeyboardShortcuts () {
+    function initKeyboardShortcuts() {
         // We're on a regular 'edit content' page, if we have a sidebarsavecontinuebutton.
         // If we're on an 'edit file' screen,  we have a #saveeditfile
         if ($('#sidebarsavecontinuebutton').is('*') || $('#saveeditfile').is('*')) {
@@ -351,90 +480,32 @@
                 },
                 1000
             );
-
-            // Initialize handler for 'closing window'
-            window.onbeforeunload = function () {
-                if ((hasChanged()) || (bolt.liveEditor.active)) {
-                    return bolt.data('editcontent.msg.change_quit');
-                 }
-            };
         }
     }
 
     /**
-     * Remember current state of content for change detection.
+     * Initializes the mixin.
      *
      * @static
-     * @function watchChanges
-     * @memberof Bolt.editcontent
-     */
-    function watchChanges() {
-        $('form#editcontent').find('input, textarea, select').each(function () {
-            if (this.type === 'textarea' && $(this).hasClass('ckeditor')) {
-                if (ckeditor.instances[this.id].checkDirty()) {
-                    ckeditor.instances[this.id].updateElement();
-                    ckeditor.instances[this.id].resetDirty();
-                }
-            }else{
-                var val = getComparable(this);
-                if (val !== undefined) {
-                    $(this).data('watch', val);
-                }
-            }
-        });
-    }
-
-    /**
-     * Detect if changes were made to the content.
-     *
-     * @static
-     * @function hasChanged
+     * @function init
      * @memberof Bolt.editcontent
      *
-     * @returns {boolean}
+     * @param {BindData} data - Editcontent configuration data
      */
-    function hasChanged() {
-        var changes = 0;
-
-        $('form#editcontent').find('input, textarea, select').each(function () {
-            if (this.type === 'textarea' && $(this).hasClass('ckeditor')) {
-                if (ckeditor.instances[this.id].checkDirty()) {
-                    changes++;
-                }
-            } else {
-                var val = getComparable(this);
-                if (val !== undefined && $(this).data('watch') !== val) {
-                    changes++;
-                }
-            }
-        });
-
-        return changes > 0;
-    }
-
-    /**
-     * Gets the current value of an input element processed to be comparable
-     *
-     * @static
-     * @function getComparable
-     * @memberof Bolt.editcontent
-     *
-     * @param {Object} item - Input element
-     *
-     * @returns {string|undefined}
-     */
-    function getComparable(item) {
-        var val;
-
-        if (item.name) {
-            val = $(item).val();
-            if (item.type === 'select-multiple') {
-                val = JSON.stringify(val);
-            }
-        }
-
-        return val;
-    }
+    editcontent.init = function (data) {
+        initValidation();
+        initSave();
+        initSaveNew();
+        initSaveContinue(data);
+        initPreview();
+        initLiveEditor();
+        initDelete();
+        initTabGroups();
+        bolt.liveEditor.init(data);
+        window.setTimeout(function () {
+            initKeyboardShortcuts();
+        }, 1000);
+    };
 
     // Apply mixin container.
     bolt.editcontent = editcontent;

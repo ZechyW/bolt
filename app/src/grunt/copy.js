@@ -1,5 +1,3 @@
-/* global module */
-
 /*
  * COPY: Copy files and folders
  */
@@ -12,10 +10,21 @@ module.exports = {
             expand: true,
             flatten: true,
             src: [
-                '<%= path.src.bower %>/font-awesome/fonts/*'
+                '<%= path.src.npm %>/font-awesome/fonts/*'
             ],
             filter: 'isFile',
             dest: '<%= path.dest.fonts %>/'
+        }, {
+            expand: true,
+            flatten: true,
+            cwd: '<%= path.src.npm %>/source-sans-pro',
+            src: 'WOFF?(2)/OTF/SourceSansPro-@(It|Regular|Semibold).otf.woff?(2)',
+            dest: '<%= path.dest.fonts %>',
+            rename: function (dest, src) {
+                "use strict";
+
+                return dest + '/' + src.replace(/\.otf(\.woff2?)$/, '$1');
+            }
         }]
     },
 
@@ -67,6 +76,8 @@ module.exports = {
         dest: '<%= path.dest.js %>/ckeditor/ckeditor.js',
         options: {
             process: function (cont) {
+                'use strict';
+
                 return cont.replace(/(CKEDITOR\.getUrl\()"lang\/"(\+a\+"\.js"\))/, '$1"../locale/ckeditor/"$2');
             }
         }

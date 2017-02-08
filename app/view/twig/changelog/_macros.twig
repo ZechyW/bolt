@@ -8,7 +8,7 @@
                 <li class="disabled"><span><i style="font-weight: bold" class="fa fa-angle-left"></i></span></li>
             {% endif %}
 
-            <li><span>{{ __('component.changelog-pager.page') }} {{ currentpage }} / {{ pagecount }}</span></li>
+            <li><span>{{ __('general.phrase.page') }} {{ currentpage }} / {{ pagecount }}</span></li>
 
             {% if currentpage < pagecount %}
                 <li><a href="?page={{ currentpage + 1 }}"><i style="font-weight: bold" class="fa fa-angle-right"></i></a></li>
@@ -22,15 +22,16 @@
 {% endmacro %}
 
 {% macro changelog_details(entry) %}
-    {% import '_macro/_macro.twig' as macro %}
+    {% import '@bolt/_macro/_macro.twig' as macro %}
+    {% from '@bolt/_buic/_moment.twig' import buic_moment %}
 
     {% set preview_w = 200 %}
     {% set preview_h = 150 %}
 
     <h3>
         "<a href="{{ path('editcontent', {'contenttypeslug': entry.contenttype, 'id': entry.contentid}) }}">{{ entry.title }}</a>"
-        <em><span class="time">{{ _self.changelog_mutation(entry.mutation_type) }} {{ macro.datetime(entry.date|date("c")) }}</span>
-        {{ __('component.changelog-detail.by') }}</em> <strong>{{ macro.userlink(entry.ownerid|default('')) }}</strong>
+        <em><span class="time">{{ _self.changelog_mutation(entry.mutation_type) }} {{ buic_moment(entry.date) }}</span>
+        {{ __('general.phrase.by') }}</em> <strong>{{ macro.userlink(entry.ownerid|default('')) }}</strong>
     </h3>
 
     <div class="changelog-details">
@@ -40,7 +41,7 @@
 
         <div class="body">
             <p>
-                {% if ischangelogenabled() %}
+                {% if config.get('general/changelog/enabled') %}
                     {% if entry.comment %}<h4><strong>Comment</strong>: {{ entry.comment }}</h4>{% endif %}
                 {% endif %}
             </p>
@@ -48,9 +49,9 @@
             <table class="table table-bordered table-condensed table-changelog-details">
                 <thead>
                     <tr>
-                        <th>{{ __('component.changelog-detail.field') }}</th>
-                        <th>{{ __('component.changelog-detail.value-old') }}</th>
-                        <th>{{ __('component.changelog-detail.value-new') }}</th>
+                        <th>{{ __('general.phrase.field') }}</th>
+                        <th>{{ __('general.phrase.value-old') }}</th>
+                        <th>{{ __('general.phrase.value-new') }}</th>
                     </tr>
                 </thead>
                 <tbody>

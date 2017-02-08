@@ -1,11 +1,13 @@
 {#=== OPTIONS ========================================================================================================#}
 
 {% set option = {
-    class:     ('form-control ' ~ field.class)|trim,
+    info:      field.info|default(''),
     label:     field.label,
     multiple:  (field.multiple is defined and field.multiple),
+    sortable:  (field.sortable is defined and field.sortable),
+    required:  field.required|default(false),
     values:    field.values|default([]),
-    info:      field.info|default('')
+    default:   field.default|default(null),
 } %}
 
 {#=== INIT ===========================================================================================================#}
@@ -13,47 +15,61 @@
 {% if option.values is iterable %}
     {% set values = option.values %}
 {% else %}
-    {% set lookuptype = option.values|split('/')|first %}
-    {% set lookupfield = option.values|split('/')|last %}
+    {% set lookuptype = option.values|split('/')|slice(0,1)|first %}
+    {% set lookupfield = option.values|split('/')|slice(1,1)|first %}
     {% if ',' in lookupfield %}
-        {% set lookupfield = lookupfield|split(',') %}
+        {% set lookupfieldlist = lookupfield|split(',') %}
     {% endif %}
-    {% set sortingorder = field.sort|default(lookupfield|first) %}
+    {% set sortingorder = field.sort|default(lookupfieldlist|default([])|first)|default(lookupfield)|default('id') %}
     {% set querylimit = field.limit|default(500) %}
     {% set wherefilter = field.filter|default({}) %}
     {% setcontent lookups = lookuptype where wherefilter order sortingorder nohydrate limit querylimit %}
-    {% set values = lookups|selectfield(lookupfield, option.multiple, field.keys|default('id')) %}
+    {% set valuefield = lookupfieldlist|default(lookupfield)|default('id') %}
+    {% set values = lookups|selectfield(valuefield, option.multiple, field.keys|default('id')) %}
 {% endif %}
 
-{# get the current selection. Either a single value, or an array. #}
-{% set selection = context.content.get(contentkey)|default(null) %}
+{# Get the current selection. Either a single value, or an array. #}
+{% set selection = context.content.get(contentkey)|default(option.default) %}
 {% if selection is not iterable %}
     {% set selection = [ selection ] %}
 {% endif %}
 
 {# If the current selection contains an existing id, we must use _only_ the id, and not accept a fallback. #}
-{% if selection|first in values|keys %}
-    {% set onlyids = true %}
-{% else %}
-    {% set onlyids = false %}
-{% endif %}
+{% set onlyids = selection|first in values|keys %}
 
-{# If the field has autocomplete, we need to set our own style, and remove the class attribute. #}
-{% set attributes = {
-    select: {
-        class:     field.autocomplete|default(false) ? '' : option.class,
-        id:        key,
-        multiple:  option.multiple,
-        name:      (option.multiple) ? name ~ '[]' : name,
-        style:     field.autocomplete|default(false) ? 'width: 100%;' : '',
-    }
+{# Build the select options array #}
+{% set options = [] %}
+{% for id, value in values %}
+    {% set is_array = (value is iterable and (value | length) > 1) %}
+    {% set options = options|merge([{
+        value:     id,
+        text:      is_array ? value[0:]|join(' / ') : value,
+        selected:  id in selection or (not onlyids and (is_array ? value[0] : value) in selection),
+    }]) %}
+{% endfor %}
+
+{# BUIC options #}
+{% set buic_opt_select = {
+    'all':       option.multiple,
+    'clear':     true,
+    'id':        key,
+    'multiple':  option.multiple,
+    'name':      option.multiple ? name ~ '[]' : name,
+    'options':   options,
+    'required':  option.required,
 } %}
 
 {#=== FIELDSET =======================================================================================================#}
 
-{% extends '_base/_fieldset.twig' %}
+{% extends '@bolt/_base/_fieldset.twig' %}
 
 {% block fieldset_type 'select' %}
+{% block fieldset_widget 'fieldSelect' %}
+
+{% set fieldset_conf = {
+    autocomplete: field.autocomplete|default(false),
+    sortable: field.sortable|default(false)
+} %}
 
 {% block fieldset_label_text  labelkey %}
 {% block fieldset_label_info  option.info %}
@@ -61,40 +77,9 @@
 {% block fieldset_label_for   key %}
 
 {% block fieldset_controls %}
-    <div class="col-sm-9">
-        <select{{ macro.attr(attributes.select) }}>
-            {% for id, value in values %}
+    {% from '@bolt/_buic/_select.twig' import buic_select %}
 
-                {% set is_array = (value is iterable and (value | length) > 1) %}
-                {% set attr_opt = {
-                    value:     id,
-                    selected:  id in selection or (not onlyids and (is_array ? value[0] : value) in selection),
-                } %}
-
-                <option{{ macro.attr(attr_opt) }}>{{ is_array ? value[0:]|join(' / ') : value }}</option>
-            {% endfor %}
-        </select>
-
-        {% if option.multiple %}
-        <div>{# TODO: move onclick-events to JS #}
-            <a href="#" class="btn btn-default btn-xs" onclick="jQuery('#{{ key }} option').prop('selected', true); return false;">
-                <i class="fa fa-fw fa-check-square-o"></i>{{ __("Select all") }}
-            </a>
-            <a href="#" class="btn btn-default btn-xs" onclick="jQuery('#{{ key }} option').prop('selected', false); return false;">
-                <i class="fa fa-fw fa-square-o"></i>{{ __("Select none") }}
-            </a>
-        </div>
-        {% endif %}
+    <div class="col-sm-9{{ option.sortable ? ' sortable-select2-container' }}">
+        {{ buic_select(buic_opt_select) }}
     </div>
-
-    {% if field.autocomplete|default(false) %}
-    <script>
-        $(function() {
-            $('#{{ key }}').select2({
-                placeholder: "{{ __('(none)') }}",
-                allowClear: true
-            });
-        });
-    </script>
-    {% endif %}
 {% endblock fieldset_controls %}

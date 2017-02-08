@@ -3,6 +3,7 @@ html {
 }
 
 body {
+    background: $basebgcolour;
     color: $bodytextcolour;
     font-size: 13px;
     min-height: 100%;
@@ -72,18 +73,6 @@ blockquote.quote cite {
     color: #999;
 }
 
-
-/**
- * Hide / show on phones or tablets.
- */
-
-@media (max-width: 480px) {
-    #editcontent div.tagcloud {
-        margin-left: 0;
-        width: 100%;
-    }
-}
-
 /**
  *
  * TODO: Everything below is copy/pasted from bolt.css, and needs to be reworked into the correct locations.
@@ -149,10 +138,47 @@ table.dataTable thead .sorting:after {
     margin: 15px 0;
 }
 
+// Todo: move this.
 .login .logo {
-    margin-top:100px;
+    margin-top: 100px;
     width: 179px;
     height: auto;
+}
+
+// Todo: move this.
+body.exception {
+    .logo {
+        margin-top: 30px;
+        width: 120px;
+        height: auto;
+    }
+    code {
+        white-space: pre;
+        word-wrap: break-word;
+    }
+
+    p.exception {
+        font-size: 130%;
+        margin: 2em 0;
+    }
+
+    td {
+        font-family: $fonts-family-monospace;
+    }
+
+    th {
+        min-width: 4em;
+    }
+
+    pre[data-line] {
+        padding-left: 4.1em;
+    }
+
+    .dim {
+        color: #888;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+
 }
 
 .dropdown-menu .nav-header {
@@ -161,89 +187,12 @@ table.dataTable thead .sorting:after {
     padding: 3px 12px;
 }
 
-/*-- Omnisearch --*/
-
-.omnisearch {
-
-    & > .select2-dropdown-open, & > .select2-container-active {
-        box-shadow: none !important;
-    }
-
-    & > .select2-choices {
-        background : transparent none !important;
-        border : none !important;
-        outline : 0 !important;
-        box-shadow: none !important;
-
-        & > .select2-search-field {
-
-            & > input, & > input:focus {
-                min-width: 180px;
-                @media (min-width: 1024px) {
-                    min-width: 280px;
-                }
-            }
-        }
-    }
-
-    .select2-search-choice {
-        display: none;
-    }
-
-    & > .select2-choices {
-        border: 0px;
-
-        & > .select2-search-field input {
-            padding : 0;
-            font-size: inherit;
-            font-family: inherit;
-        }
-    }
-
-    input.select2-input {
-        color: #AAA;
-    }
-
-    input.select2-input:focus {
-        color: #333;
-    }
-}
-
-.omnisearch-result {
-}
-
-.omnisearch-result-info {
-}
-
-.omnisearch-result-label {
-    font-weight: bold;
-}
-
-.omnisearch-result-label span {
-    font-weight: normal;
-}
-
-.omnisearch-result-description {
-    font-size: smaller;
-    color: #999;
-}
-
-.select2-highlighted .omnisearch-result-description {
-    color : #FFF; // better contrast.
-}
-
-.omnisearchlisting tbody tr td a span {
-    font-weight: normal;
-}
-
-form#filescreenuploader {
-    div {
-        float: left;
-        margin-right: 6px;
-        margin-top: 6px;
-        display: inline;
-        width: 100%;
-    }
+form#filescreenuploader fieldset > div {
+    float: left;
+    margin-right: 6px;
+    margin-top: 6px;
+    display: inline;
+    width: 100%;
 }
 
 .relatedfiles {

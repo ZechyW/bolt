@@ -5,7 +5,7 @@
     label:       field.label,
     upload:      field.upload|default(''),
     can_upload:  field.canUpload,
-    info:        field.info|default('info.upload.filelist')
+    info:        field.info|default('info.upload.imagelist')
 } %}
 
 {#=== INIT ===========================================================================================================#}
@@ -13,8 +13,7 @@
 {% set attributes = {
     fileupload: {
         accept:       option.extensions ? '.' ~ option.extensions|join(',.') : '',
-        data_upload:  {type: 'ImageList', key: key}|json_encode(),
-        data_url:     url('upload', {'handler': option.upload}),
+        data_url:     url('upload', {' handler': option.upload }, true),
         id:           'fileupload-' ~ key,
         multiple:     true,
         name:         'files[]',
@@ -22,59 +21,70 @@
     }
 } %}
 
-{% if context.content.get(contentkey) is defined %}
-    {% set list_json = context.content.get(contentkey)|json_encode() %}
-{% else %}
-    {% set list_json = '' %}
-{% endif %}
+{% set list = context.content.get(contentkey)|default([]) %}
 
-{% set listdata = {
-    'typelist':         option.extensions ? '.' ~ option.extensions|join(', .') : '–',
-} %}
+{#=== TEMPLATES ======================================================================================================#}
 
-{#=== BLOCKS =========================================================================================================#}
+{### Template: Empty list ###}
 
-{% import _self as block %}
+{% set template_empty %}
+    <p>{{ __('general.phrase.no-images-in-list') }}</p>
+{% endset %}
+{% set template_empty = template_empty|trim %}
 
-{# Modal "select from server" #}
-{% macro serverselect(key) %}
-    <div class="modal fade" id="selectModal-{{ key }}" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content"></div>
-        </div>
+{### Template: Listitem ###}
+
+{% set template_item %}
+    <div class="item ui-state-default">
+        <a class="magnific" href="{{ app.paths.files }}%FILENAME_A%" title="%TITLE_A%">
+            <img src="{{ app.paths.bolt }}../thumbs/60x40/%FILENAME_A%" width="60" height="40">
+        </a>
+        <input type="text" class="title" value="%TITLE_A%">
+        <input type="hidden" class="filename" value="%FILENAME_A%">
+        <a href="#" class="remove"><i class="fa fa-times"></i></a>
+        <span class="desc">%FILENAME_E%</span>
     </div>
-{% endmacro %}
+{% endset %}
+{% set template_item = template_item|trim|preg_replace('/>\\s+</', '><') %}
 
 {#=== FIELDSET =======================================================================================================#}
 
-{% extends '_base/_fieldset.twig' %}
+{% extends '@bolt/_base/_fieldset.twig' %}
 
 {% block fieldset_type 'imagelist' %}
+{% block fieldset_widget 'fieldImagelist' %}
 
 {% block fieldset_label_text  labelkey %}
 {% block fieldset_label_info  option.info %}
-{% block fieldset_label_class 'col-xs-12' %}
+{% block fieldset_label_class 'col-xs-12 control-label' %}
 
 {% block fieldset_controls %}
-    <div class="col-xs-12 filelistholder dropzone" id="imagelist-{{ key }}">
+    {{ data('field.imagelist.template.empty', template_empty) }}
+    {{ data('field.imagelist.template.item', template_item) }}
 
-        <div class="list" data-list="{{ listdata|json_encode }}"></div>
-
-        {% set can_upload = context.can_upload and option.can_upload %}
-        <div class="clearfix">
-            {{ macro.upload_buttons('image', key, attributes.fileupload, option.upload, can_upload) }}
-
-            <textarea name="{{ name }}" id="{{ key }}" class="hide">{{ list_json }}</textarea>
-
-            <span class="btn btn-default remove-selected-button">
-                <i class="fa fa-trash"></i>
-                <span>{{ __('Remove selected') }}</span>
-            </span>
+    <div class="col-xs-12 dropzone">
+        {# Imagelist #}
+        <div class="list">
+            {% for image in list %}
+                {{ template_item|replace({
+                    '%TITLE_A%':    image.title|e('html_attr'),
+                    '%FILENAME_A%': image.filename|e('html_attr'),
+                    '%FILENAME_E%': image.filename|e('html')
+                })|raw }}
+            {% else %}
+                {{ template_empty|raw }}
+            {% endfor %}
         </div>
 
-        <p class="uploading-list"></p>
+        {# Progress info #}
+        <div class="buic-progress" data-bolt-widget="buicProgress"></div>
 
-        {{ block.serverselect(key) }}
+        {# Buttons #}
+        {% set can_upload = context.can.upload and option.can_upload %}
+        <div class="clearfix">
+            {{ macro.upload_buttons('image', attributes.fileupload, option.upload, can_upload, true) }}
 
+            <textarea name="{{ name }}" class="hide">{{ list|json_encode() }}</textarea>
+        </div>
     </div>
 {% endblock fieldset_controls %}

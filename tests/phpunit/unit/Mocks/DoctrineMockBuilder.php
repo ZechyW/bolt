@@ -15,13 +15,18 @@ class DoctrineMockBuilder extends \PHPUnit_Framework_TestCase
         $mock = $this->getAbstractMock(
             'Doctrine\DBAL\Platforms\AbstractPlatform',
             [
-                'getName'
+                'getName',
+                'getReservedKeywordsClass',
             ]
         );
 
         $mock->expects($this->any())
             ->method('getName')
             ->will($this->returnValue('mysql'));
+
+        $mock->expects($this->any())
+            ->method('getReservedKeywordsClass')
+            ->will($this->returnValue('Doctrine\DBAL\Platforms\Keywords\MySQLKeywords'));
 
         return $mock;
     }
@@ -45,7 +50,7 @@ class DoctrineMockBuilder extends \PHPUnit_Framework_TestCase
                     'getDatabasePlatform',
                     'createQueryBuilder',
                     'connect',
-                    'insert'
+                    'insert',
                 ]
             )
             ->getMock();
@@ -56,6 +61,10 @@ class DoctrineMockBuilder extends \PHPUnit_Framework_TestCase
 
         $mock->expects($this->any())
             ->method('query')
+            ->will($this->returnValue($this->getStatementMock()));
+
+        $mock->expects($this->any())
+            ->method('executeQuery')
             ->will($this->returnValue($this->getStatementMock()));
 
         $mock->expects($this->any())
@@ -70,12 +79,12 @@ class DoctrineMockBuilder extends \PHPUnit_Framework_TestCase
     }
 
     /**
-     * @return Doctrine\DBAL\Query\QueryBuilder
+     * @return \Doctrine\DBAL\Query\QueryBuilder
      */
     public function getQueryBuilderMock($connection)
     {
         $exprmock = $this->getMock('Doctrine\DBAL\Query\Expression\ExpressionBuilder', null, [$connection]);
-        $mock = $this->getMock("Doctrine\DBAL\Query\QueryBuilder", ['expr'], [$connection]);
+        $mock = $this->getMock("Doctrine\\DBAL\\Query\\QueryBuilder", ['expr'], [$connection]);
         $mock->expects($this->any())
             ->method('expr')
             ->will($this->returnValue($exprmock));
@@ -84,9 +93,11 @@ class DoctrineMockBuilder extends \PHPUnit_Framework_TestCase
     }
 
     /**
+     * @param mixed $returnValue
+     *
      * @return \Doctrine\DBAL\Driver\Statement|\PHPUnit_Framework_MockObject_MockObject
      */
-    public function getStatementMock()
+    public function getStatementMock($returnValue = 1)
     {
         $mock = $this->getAbstractMock(
             'Bolt\Tests\Mocks\DoctrineDbalStatementInterface', // In case you run PHPUnit <= 3.7, use 'Mocks\DoctrineDbalStatementInterface' instead.
@@ -100,7 +111,7 @@ class DoctrineMockBuilder extends \PHPUnit_Framework_TestCase
 
         $mock->expects($this->any())
             ->method('fetchColumn')
-            ->will($this->returnValue(1));
+            ->will($this->returnValue($returnValue));
 
         return $mock;
     }

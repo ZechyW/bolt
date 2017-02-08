@@ -1,6 +1,7 @@
 <?php
 namespace Bolt\Storage\Database\Schema\Table;
 
+use Bolt\Exception\StorageException;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Schema\Schema;
 
@@ -16,33 +17,63 @@ abstract class BaseTable
     /** @var \Doctrine\DBAL\Schema\Table */
     protected $table;
     /** @var string */
+    protected $tablePrefix;
+    /** @var string */
     protected $tableName;
+    /** @var string */
+    protected $aliasName;
 
     /**
      * Constructor.
      *
      * @param AbstractPlatform $platform
+     * @param string           $tablePrefix
      */
-    public function __construct(AbstractPlatform $platform)
+    public function __construct(AbstractPlatform $platform, $tablePrefix)
     {
         $this->platform = $platform;
+        $this->tablePrefix = $tablePrefix;
+    }
+
+    /**
+     * Get the table object.
+     *
+     * @throws StorageException
+     *
+     * @return \Doctrine\DBAL\Schema\Table
+     */
+    public function getTable()
+    {
+        if ($this->table === null) {
+            throw new StorageException('Table not built.');
+        }
+
+        return $this->table;
     }
 
     /**
      * Get the table's schema object.
      *
      * @param Schema $schema
-     * @param string $tableName
+     * @param string $aliasName
+     * @param string $charset
+     * @param string $collate
      *
      * @return \Doctrine\DBAL\Schema\Table
      */
-    public function buildTable(Schema $schema, $tableName)
+    public function buildTable(Schema $schema, $aliasName, $charset, $collate)
     {
+        $tableName = $this->tablePrefix . $aliasName;
         $this->table = $schema->createTable($tableName);
+        $this->table->addOption('alias', $aliasName);
+        $this->table->addOption('charset', $charset);
+        $this->table->addOption('collate', $collate);
+        $this->aliasName = $aliasName;
         $this->tableName = $this->table->getName();
         $this->addColumns();
         $this->addIndexes();
         $this->setPrimaryKey();
+        $this->addForeignKeyConstraints();
 
         return $this->table;
     }
@@ -64,16 +95,29 @@ abstract class BaseTable
     }
 
     /**
-     * A function to return the columns and keys that should be ignored, as DBAL
-     * can't seem to do it properly.
+     * Get the table's alias (short) name.
      *
-     * Returned array format: ['column' => '', 'property' => '']
+     * @throws \RuntimeException
      *
-     * @return array|boolean
+     * @return string
      */
-    public function ignoredChanges()
+    public function getTableAlias()
     {
-        return false;
+        if ($this->aliasName === null) {
+            throw new \RuntimeException('Table ' . __CLASS__ . ' has not been built yet.');
+        }
+
+        return $this->aliasName;
+    }
+
+    /**
+     * Default value for TEXT fields, differs per platform.
+     *
+     * @return string|null
+     */
+    protected function getTextDefault()
+    {
+        return '';
     }
 
     /**
@@ -90,4 +134,11 @@ abstract class BaseTable
      * Set the table's primary key.
      */
     abstract protected function setPrimaryKey();
+
+    /**
+     * Set the table's foreign key constraints.
+     */
+    protected function addForeignKeyConstraints()
+    {
+    }
 }

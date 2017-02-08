@@ -3,9 +3,9 @@
 namespace Bolt\Composer\Action;
 
 use Bolt\Exception\PackageManagerException;
-use Composer\Factory;
 use Composer\Repository\CompositeRepository;
 use Composer\Repository\PlatformRepository;
+use Composer\Repository\RepositoryFactory;
 use Composer\Repository\RepositoryInterface;
 
 /**
@@ -27,7 +27,7 @@ final class SearchPackage extends BaseAction
      */
     public function execute($packages, $onlyname = true)
     {
-        /** @var $composer \Composer\Composer */
+        /** @var \Composer\Composer $composer */
         $composer = $this->getComposer();
         $io = $this->getIO();
 
@@ -38,7 +38,7 @@ final class SearchPackage extends BaseAction
             $installedRepo = new CompositeRepository([$localRepo, $platformRepo]);
             $repos = new CompositeRepository(array_merge([$installedRepo], $composer->getRepositoryManager()->getRepositories()));
         } else {
-            $defaultRepos = Factory::createDefaultRepositories($io);
+            $defaultRepos = RepositoryFactory::defaultRepos($io);
 
             //No composer.json found in the current directory, showing packages from local repo
             $installedRepo = $platformRepo;
@@ -50,7 +50,7 @@ final class SearchPackage extends BaseAction
         try {
             return $repos->search(implode(' ', $packages), $flags);
         } catch (\Exception $e) {
-            $msg = __CLASS__ . '::' . __FUNCTION__ . ' recieved an error from Composer: ' . $e->getMessage() . ' in ' . $e->getFile() . '::' . $e->getLine();
+            $msg = sprintf('%s recieved an error from Composer: %s in %s::%s', __METHOD__, $e->getMessage(), $e->getFile(), $e->getLine());
             $this->app['logger.system']->critical($msg, ['event' => 'exception', 'exception' => $e]);
 
             throw new PackageManagerException($e->getMessage(), $e->getCode(), $e);

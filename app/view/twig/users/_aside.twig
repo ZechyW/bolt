@@ -1,7 +1,11 @@
-{% include 'users/_panel-actions_users.twig' %}
+{{ include('@bolt/users/_panel-actions_users.twig') }}
 
-<div id="latestactivity">
-    {{ render(path("latestactivity")) }}
+{{ widgets('users_aside_top', 'backend') }}
+
+<div data-bolt-widget="panelActivity">
+    {{ render(path('latestactivity')) }}
 </div>
+
+{{ widgets('users_aside_bottom', 'backend') }}
 
 <div id="latesttemp" style="display:none; visibility: hidden;"><!-- intentionally left blank --></div>

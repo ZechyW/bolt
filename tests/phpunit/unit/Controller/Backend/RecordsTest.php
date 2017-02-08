@@ -3,6 +3,10 @@ namespace Bolt\Tests\Controller\Backend;
 
 use Bolt\Tests\Controller\ControllerUnitTest;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Symfony\Component\Security\Csrf\CsrfTokenManager;
+use Symfony\Component\Security\Csrf\TokenStorage\SessionTokenStorage;
 
 /**
  * Class to test correct operation of src/Controller/Backend/Records.
@@ -12,38 +16,9 @@ use Symfony\Component\HttpFoundation\Request;
  **/
 class RecordsTest extends ControllerUnitTest
 {
-    public function testDelete()
+    public function setUp()
     {
-        $this->setRequest(Request::create('/bolt/deletecontent/pages/4'));
-        $response = $this->controller()->delete($this->getRequest(), 'pages', 4);
-
-        // This one should fail for permissions
-        $this->assertEquals('/bolt/overview/pages', $response->getTargetUrl());
-        $err = $this->getFlashBag()->get('error');
-        $this->assertRegExp('/denied/', $err[0]);
-
-        $permissions = $this->getMock('Bolt\AccessControl\Permissions', ['isAllowed'], [$this->getApp()]);
-        $permissions->expects($this->any())
-            ->method('isAllowed')
-            ->will($this->returnValue(true));
-        $this->setService('permissions', $permissions);
-
-        // This one should get killed by the anti CSRF check
-        $response = $this->controller()->delete($this->getRequest(), 'pages', 4);
-        $this->assertEquals('/bolt/overview/pages', $response->getTargetUrl());
-        $err = $this->getFlashBag()->get('info');
-        $this->assertRegExp('/could not be deleted/', $err[0]);
-
-        $users = $this->getMock('Bolt\Users', ['checkAntiCSRFToken'], [$this->getApp()]);
-        $users->expects($this->any())
-            ->method('checkAntiCSRFToken')
-            ->will($this->returnValue(true));
-        $this->setService('users', $users);
-
-        $response = $this->controller()->delete($this->getRequest(), 'pages', 4);
-        $this->assertEquals('/bolt/overview/pages', $response->getTargetUrl());
-        $err = $this->getFlashBag()->get('info');
-        $this->assertRegExp('/has been deleted/', $err[0]);
+        $this->resetConfig();
     }
 
     public function testEditGet()
@@ -64,14 +39,14 @@ class RecordsTest extends ControllerUnitTest
         $response = $this->controller()->edit($this->getRequest(), 'pages', 4);
         $context = $response->getContext();
         $this->assertEquals('Pages', $context['context']['contenttype']['name']);
-        $this->assertInstanceOf('Bolt\Content', $context['context']['content']);
+        $this->assertInstanceOf('Bolt\Storage\Entity\Content', $context['context']['content']);
 
         // Test creation
         $this->setRequest(Request::create('/bolt/editcontent/pages'));
         $response = $this->controller()->edit($this->getRequest(), 'pages', null);
         $context = $response->getContext();
         $this->assertEquals('Pages', $context['context']['contenttype']['name']);
-        $this->assertInstanceOf('Bolt\Content', $context['context']['content']);
+        $this->assertInstanceOf('Bolt\Storage\Entity\Content', $context['context']['content']);
         $this->assertNull($context['context']['content']->id);
 
         // Test that non-existent throws a redirect
@@ -108,18 +83,17 @@ class RecordsTest extends ControllerUnitTest
 
     public function testEditCSRF()
     {
-        $users = $this->getMock('Bolt\Users', ['checkAntiCSRFToken'], [$this->getApp()]);
-        $users->expects($this->any())
-            ->method('checkAntiCSRFToken')
+        $csrf = $this->getMock(CsrfTokenManager::class, ['isTokenValid'], [null, new SessionTokenStorage(new Session(new MockArraySessionStorage()))]);
+        $csrf->expects($this->any())
+            ->method('isTokenValid')
             ->will($this->returnValue(false));
+        $this->setService('csrf', $csrf);
 
         $permissions = $this->getMock('Bolt\AccessControl\Permissions', ['isAllowed'], [$this->getApp()]);
         $permissions->expects($this->any())
             ->method('isAllowed')
             ->will($this->returnValue(true));
         $this->setService('permissions', $permissions);
-
-        $this->setService('users', $users);
 
         $this->setRequest(Request::create('/bolt/editcontent/showcases/3', 'POST'));
         $this->setExpectedException('Symfony\Component\HttpKernel\Exception\HttpException', 'Something went wrong');
@@ -148,6 +122,12 @@ class RecordsTest extends ControllerUnitTest
 
     public function testEditPost()
     {
+        $csrf = $this->getMock(CsrfTokenManager::class, ['isTokenValid'], [null, new SessionTokenStorage(new Session(new MockArraySessionStorage()))]);
+        $csrf->expects($this->any())
+            ->method('isTokenValid')
+            ->will($this->returnValue(true));
+        $this->setService('csrf', $csrf);
+
         $users = $this->getMock('Bolt\Users', ['checkAntiCSRFToken'], [$this->getApp()]);
         $users->expects($this->any())
             ->method('checkAntiCSRFToken')
@@ -161,14 +141,18 @@ class RecordsTest extends ControllerUnitTest
         $this->setService('permissions', $permissions);
 
         $this->setRequest(Request::create('/bolt/editcontent/showcases/3', 'POST', ['floatfield' => 1.2]));
-        //$original = $this->getService('storage')->getContent('showcases/3');
         $response = $this->controller()->edit($this->getRequest(), 'showcases', 3);
         $this->assertEquals('/bolt/overview/showcases', $response->getTargetUrl());
     }
 
     public function testEditPostAjax()
     {
-        $app = $this->getApp();
+        $csrf = $this->getMock(CsrfTokenManager::class, ['isTokenValid'], [null, new SessionTokenStorage(new Session(new MockArraySessionStorage()))]);
+        $csrf->expects($this->any())
+            ->method('isTokenValid')
+            ->will($this->returnValue(true));
+        $this->setService('csrf', $csrf);
+
         $users = $this->getMock('Bolt\Users', ['checkAntiCSRFToken'], [$this->getApp()]);
         $users->expects($this->any())
             ->method('checkAntiCSRFToken')
@@ -193,73 +177,6 @@ class RecordsTest extends ControllerUnitTest
 
         $this->assertInstanceOf('Symfony\Component\HttpFoundation\JsonResponse', $response);
         $this->assertEquals($original['title'], $returned->title);
-    }
-
-    public function testModify()
-    {
-        // Try status switches
-        $this->setRequest(Request::create('/bolt/content/held/pages/3'));
-
-        // This one should fail for lack of permission
-        $response = $this->controller()->modify($this->getRequest(), 'held', 'pages', 3);
-        $this->assertEquals('/bolt/overview/pages', $response->getTargetUrl());
-        $err = $this->getFlashBag()->get('error');
-        $this->assertRegExp('/right privileges/', $err[0]);
-
-        $users = $this->getMock('Bolt\Users', ['checkAntiCSRFToken', 'isContentStatusTransitionAllowed'], [$this->getApp()]);
-        $this->setService('users', $users);
-
-        $permissions = $this->getMock('Bolt\AccessControl\Permissions', ['isAllowed'], [$this->getApp()]);
-        $permissions->expects($this->any())
-            ->method('isAllowed')
-            ->will($this->returnValue(true));
-        $this->setService('permissions', $permissions);
-
-        // This one should fail for the second permission check `isContentStatusTransitionAllowed`
-        $response = $this->controller()->modify($this->getRequest(), 'held', 'pages', 3);
-        $this->assertEquals('/bolt/overview/pages', $response->getTargetUrl());
-        $err = $this->getFlashBag()->get('error');
-        $this->assertRegExp('/right privileges/', $err[0]);
-
-        $this->getService('users')->expects($this->any())
-            ->method('isContentStatusTransitionAllowed')
-            ->will($this->returnValue(true));
-
-        $response = $this->controller()->modify($this->getRequest(), 'held', 'pages', 3);
-        $this->assertEquals('/bolt/overview/pages', $response->getTargetUrl());
-        $err = $this->getFlashBag()->get('info');
-        $this->assertRegExp('/has been changed/', $err[0]);
-
-        // Test an invalid action fails
-        $this->setRequest(Request::create('/bolt/content/fake/pages/3'));
-        $this->controller()->modify($this->getRequest(), 'fake', 'pages', 3);
-        $err = $this->getFlashBag()->get('error');
-        $this->assertRegExp('/No such action/', $err[0]);
-
-        // Test that any save error gets reported
-        $this->setRequest(Request::create('/bolt/content/held/pages/3'));
-
-        $storage = $this->getMock('Bolt\Storage', ['updateSingleValue'], [$this->getApp()]);
-        $storage->expects($this->once())
-            ->method('updateSingleValue')
-            ->will($this->returnValue(false));
-
-        $this->setService('storage', $storage);
-
-        $response = $this->controller()->modify($this->getRequest(), 'held', 'pages', 3);
-        $this->assertEquals('/bolt/overview/pages', $response->getTargetUrl());
-        $err = $this->getFlashBag()->get('info');
-        $this->assertRegExp('/could not be modified/', $err[0]);
-
-        // Test the delete proxy action
-        // Note that the response will be 'could not be deleted'. Since this just
-        // passes on the the deleteContent method that is enough to indicate that
-        // the work of this method is done.
-        $this->setRequest(Request::create('/bolt/content/delete/pages/3'));
-        $response = $this->controller()->modify($this->getRequest(), 'delete', 'pages', 3);
-        $this->assertEquals('/bolt/overview/pages', $response->getTargetUrl());
-        $err = $this->getFlashBag()->get('info');
-        $this->assertRegExp('/could not be deleted/', $err[0]);
     }
 
     public function testOverview()
@@ -294,14 +211,15 @@ class RecordsTest extends ControllerUnitTest
             'GET',
             [
                 'filter'            => 'Lorem',
-                'taxonomy-chapters' => 'main'
+                'taxonomy-groups' => 'main',
             ]
         ));
         $response = $this->controller()->overview($this->getRequest(), 'pages');
         $context = $response->getContext();
+
         $this->assertArrayHasKey('filter', $context['context']);
         $this->assertEquals('Lorem', $context['context']['filter'][0]);
-        $this->assertEquals('main', $context['context']['filter'][1]);
+        $this->assertEquals('main', $context['context']['filter']['groups']);
     }
 
     public function testRelated()
