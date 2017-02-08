@@ -45,13 +45,13 @@ Path to top-level:
         </article>
         {% endif %}
 
-        <h3>{{ __('Latest Course-Related Entries') }}</h3>
+        <h3>{{ __('Latest Entries') }}</h3>
 
-        {# Here we use 'setcontent' to set the variable 'records' to "course-entries/latest/2",
-           which is shorthand for "the 2 latest records in Course Entries. Note that we are
+        {# Here we use 'setcontent' to set the variable 'records' to "entries/latest/2",
+           which is shorthand for "the 2 latest records in Entries. Note that we are
            requesting multiple entries, so 'records' will be an array containing each
            of the entries. That's why we use the 'for' loop to iterate over them all. #}
-        {% setcontent records = "course-entries/latest/2" allowpaging %}
+        {% setcontent records = "entries/latest/2" allowpaging %}
         {% for record in records %}
           <article>
 
@@ -102,13 +102,13 @@ Path to top-level:
         
         <hr>
 
-        <h3>{{ __('Latest Other Entries') }}</h3>
+        <h3>{{ __('Latest Course-Related Entries') }}</h3>
 
-        {# Here we use 'setcontent' to set the variable 'records' to "entries/latest/2",
-           which is shorthand for "the 2 latest records in Entries. Note that we are
+        {# Here we use 'setcontent' to set the variable 'records' to "course-entries/latest/2",
+           which is shorthand for "the 2 latest records in Course Entries. Note that we are
            requesting multiple entries, so 'records' will be an array containing each
            of the entries. That's why we use the 'for' loop to iterate over them all. #}
-        {% setcontent records = "entries/latest/2" allowpaging %}
+        {% setcontent records = "course-entries/latest/2" allowpaging %}
         {% for record in records %}
           <article>
 
